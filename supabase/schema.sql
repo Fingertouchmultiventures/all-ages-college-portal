@@ -1,103 +1,98 @@
--- All Ages College: database for the PWA. Run once in Supabase > SQL Editor.
--- Nothing is readable by the public except through the two safe doors below:
---   1) anyone can INSERT an admission application (but never read them back)
---   2) anyone can call check_result() with a valid PIN + reg. number
+-- All Ages College portal: database. Run ONCE in Supabase > SQL Editor (paste this whole file, press Run).
+-- Safe to run again: it drops and recreates the policies.
 
-create extension if not exists pgcrypto;
-
--- people who can sign in (one row per Supabase auth user)
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  role text not null check (role in ('student','parent','teacher','bursar','admin')),
+  role text not null check (role in ('admin','teacher','bursar','student','parent')),
   full_name text,
-  created_at timestamptz default now()
+  reg_no text,                      -- a student's own reg. number
+  linked_regs text[] default '{}'   -- a parent's children (reg. numbers)
 );
 
-create table if not exists public.students (
-  reg_no text primary key,            -- e.g. AAC/2026/001
-  full_name text not null,
-  class_name text not null
+create table if not exists public.records (
+  id text primary key,
+  collection text not null,
+  data jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists records_collection_idx on public.records (collection, created_at desc);
+
+alter table public.profiles enable row level security;
+alter table public.records  enable row level security;
+
+-- helpers (security definer so policies can read profiles safely)
+create or replace function public.my_role() returns text language sql stable security definer set search_path = public as
+$$ select role from public.profiles where id = auth.uid() $$;
+create or replace function public.my_regs() returns text[] language sql stable security definer set search_path = public as
+$$ select coalesce((select linked_regs || case when reg_no is null then '{}'::text[] else array[reg_no] end from public.profiles where id = auth.uid()), '{}') $$;
+create or replace function public.is_admin() returns boolean language sql stable as $$ select public.my_role() = 'admin' $$;
+create or replace function public.can_write(col text) returns boolean language sql stable as
+$$ select case public.my_role()
+     when 'admin' then true
+     when 'teacher' then col in ('curriculum','lessonNotes','files')
+     when 'bursar' then col in ('fees','payments')
+     else false end $$;
+
+-- profiles
+drop policy if exists profiles_self on public.profiles;
+drop policy if exists profiles_admin on public.profiles;
+create policy profiles_self  on public.profiles for select using (id = auth.uid());
+create policy profiles_admin on public.profiles for all using (public.is_admin()) with check (public.is_admin());
+
+-- records: read
+drop policy if exists records_read on public.records;
+create policy records_read on public.records for select using (
+  public.is_admin()
+  or collection in ('settings','prefects','album','staff')
+  or (collection = 'announcements' and (data->>'audience' is null or data->>'audience' in ('all','')))
+  or (collection = 'files'         and (data->>'audience' is null or data->>'audience' in ('all','')))
+  or (auth.uid() is not null and public.can_write(collection))
+  or (auth.uid() is not null and collection in ('announcements','files')
+        and data->>'audience' = case public.my_role() when 'student' then 'students' when 'parent' then 'parents' when 'teacher' then 'teachers' else 'all' end)
+  or (auth.uid() is not null and collection in ('curriculum','lessonNotes','fees'))
+  or (collection = 'students' and public.my_role() in ('teacher','bursar'))
+  or (collection = 'students' and public.my_role() in ('student','parent') and upper(regexp_replace(data->>'reg_no','[^A-Za-z0-9]','','g')) = any (select upper(regexp_replace(x,'[^A-Za-z0-9]','','g')) from unnest(public.my_regs()) x))
+  or (collection = 'payments' and public.my_role() = 'bursar')
+  or (collection = 'payments' and public.my_role() in ('student','parent') and upper(regexp_replace(data->>'regNo','[^A-Za-z0-9]','','g')) = any (select upper(regexp_replace(x,'[^A-Za-z0-9]','','g')) from unnest(public.my_regs()) x))
 );
 
-create table if not exists public.results (
-  id bigint generated always as identity primary key,
-  reg_no text not null references public.students(reg_no) on delete cascade,
-  session text not null,              -- e.g. 2026/2027
-  term text not null,                 -- First Term | Second Term | Third Term
-  subject text not null,
-  ca numeric not null default 0,
-  exam numeric not null default 0,
-  grade text,
-  remark text,
-  unique (reg_no, session, term, subject)
+-- records: staff write
+drop policy if exists records_ins on public.records;
+drop policy if exists records_upd on public.records;
+drop policy if exists records_del on public.records;
+create policy records_ins on public.records for insert with check (
+  public.can_write(collection)
+  or (collection in ('feedback','applications') and coalesce(data->>'status','New') = 'New')   -- public boxes: anyone may add
 );
+create policy records_upd on public.records for update
+  using (public.can_write(collection) and (public.my_role() <> 'teacher' or collection <> 'lessonNotes' or data->>'owner' = auth.uid()::text))
+  with check (public.can_write(collection));
+create policy records_del on public.records for delete
+  using (public.can_write(collection) and (public.my_role() <> 'teacher' or collection <> 'lessonNotes' or data->>'owner' = auth.uid()::text));
 
-create table if not exists public.result_pins (
-  pin text primary key,               -- store UPPERCASE, no spaces or dashes
-  reg_no text not null references public.students(reg_no) on delete cascade,
-  session text not null,
-  term text not null,
-  uses int not null default 0,
-  max_uses int not null default 5
-);
-
-create table if not exists public.applications (
-  id bigint generated always as identity primary key,
-  ref text unique not null,
-  first_name text not null, surname text not null, other_names text,
-  gender text, dob date, class_applied text not null, previous_school text,
-  guardian_name text not null, relationship text, phone text not null,
-  whatsapp text, email text, address text, heard_from text,
-  status text not null default 'new',
-  created_at timestamptz default now()
-);
-
-alter table public.profiles    enable row level security;
-alter table public.students    enable row level security;
-alter table public.results     enable row level security;
-alter table public.result_pins enable row level security;
-alter table public.applications enable row level security;
-
-create or replace function public.is_admin() returns boolean
-language sql stable security definer set search_path = public as
-$$ select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin') $$;
-
--- profiles: you can read your own row; admins can read/write all
-create policy "own profile" on public.profiles for select using (id = auth.uid() or public.is_admin());
-create policy "admin manage profiles" on public.profiles for all using (public.is_admin()) with check (public.is_admin());
-
--- students / results / pins: admins only (teachers and bursar policies can be added later)
-create policy "admin students" on public.students    for all using (public.is_admin()) with check (public.is_admin());
-create policy "admin results"  on public.results     for all using (public.is_admin()) with check (public.is_admin());
-create policy "admin pins"     on public.result_pins for all using (public.is_admin()) with check (public.is_admin());
-
--- applications: the public may submit, only admins may read or manage
-create policy "public can apply" on public.applications for insert to anon, authenticated with check (true);
-create policy "admin read applications" on public.applications for select using (public.is_admin());
-create policy "admin update applications" on public.applications for update using (public.is_admin());
-
--- Result checking door. Returns one JSON object, or {"error": "..."}.
+-- result checking: safe door, needs PIN + reg. number + session + term
 create or replace function public.check_result(p_pin text, p_reg text, p_session text, p_term text)
-returns json language plpgsql security definer set search_path = public as $$
-declare
-  v_pin text := upper(regexp_replace(coalesce(p_pin,''), '[^A-Za-z0-9]', '', 'g'));
-  v_reg text := upper(regexp_replace(coalesce(p_reg,''), '[^A-Za-z0-9]', '', 'g'));
-  rp public.result_pins%rowtype;
-  st public.students%rowtype;
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare pin_row public.records; res jsonb; rp text := upper(regexp_replace(coalesce(p_pin,''),'[^A-Za-z0-9]','','g'));
+  rr text := upper(regexp_replace(coalesce(p_reg,''),'[^A-Za-z0-9]','','g'));
 begin
-  select * into rp from public.result_pins
-   where upper(regexp_replace(pin,'[^A-Za-z0-9]','','g')) = v_pin
-     and upper(regexp_replace(reg_no,'[^A-Za-z0-9]','','g')) = v_reg
-     and session = p_session and term = p_term;
-  if not found then return json_build_object('error','Invalid PIN, reg. number, session or term.'); end if;
-  if rp.uses >= rp.max_uses then return json_build_object('error','This PIN has reached its maximum number of uses.'); end if;
-  select * into st from public.students where reg_no = rp.reg_no;
-  update public.result_pins set uses = uses + 1 where pin = rp.pin;
-  return (
-    select json_build_object(
-      'student', st.full_name, 'reg_no', st.reg_no, 'class', st.class_name, 'session', p_session, 'term', p_term,
-      'remark', max(r.remark),
-      'subjects', coalesce(json_agg(json_build_object('subject', r.subject, 'ca', r.ca, 'exam', r.exam, 'grade', r.grade) order by r.subject) filter (where r.subject is not null), '[]'::json))
-    from public.results r where r.reg_no = st.reg_no and r.session = p_session and r.term = p_term);
+  select * into pin_row from public.records where collection='pins' and data->>'pin_norm'=rp and data->>'reg_norm'=rr and data->>'session'=p_session and data->>'term'=p_term limit 1;
+  if not found then return jsonb_build_object('error','Invalid PIN, reg. number, session or term.'); end if;
+  if coalesce((pin_row.data->>'uses')::int,0) >= coalesce((pin_row.data->>'max_uses')::int,5) then return jsonb_build_object('error','This PIN has reached its maximum number of uses.'); end if;
+  select data into res from public.records where collection='results' and data->>'reg_norm'=rr and data->>'session'=p_session and data->>'term'=p_term limit 1;
+  if res is null then return jsonb_build_object('error','This result has not been published yet.'); end if;
+  update public.records set data = jsonb_set(data,'{uses}', to_jsonb(coalesce((data->>'uses')::int,0)+1)) where id = pin_row.id;
+  return res;
 end $$;
+revoke all on function public.check_result(text,text,text,text) from public;
 grant execute on function public.check_result(text,text,text,text) to anon, authenticated;
+
+-- file storage (photos, notes, PDFs)
+insert into storage.buckets (id, name, public) values ('uploads','uploads', true) on conflict (id) do update set public = true;
+drop policy if exists uploads_read on storage.objects;
+drop policy if exists uploads_ins on storage.objects;
+drop policy if exists uploads_del on storage.objects;
+create policy uploads_read on storage.objects for select using (bucket_id = 'uploads');
+create policy uploads_ins  on storage.objects for insert with check (bucket_id = 'uploads' and public.my_role() in ('admin','teacher','bursar'));
+create policy uploads_del  on storage.objects for delete using (bucket_id = 'uploads' and public.my_role() in ('admin','teacher'));

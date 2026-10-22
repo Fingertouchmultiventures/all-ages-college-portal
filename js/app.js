@@ -1,111 +1,63 @@
 import { CONFIG } from './config.js';
 import * as data from './data.js';
+import { COLS } from './schema.js';
+import { $, $$, esc, ic, opt, field, selectField, validate, showPw, toast, CLASS_GROUPS, TERMS, today as todayStr } from './ui.js';
+import { hubTiles, vManage } from './manage.js';
+import * as pt from './portal.js';
+import { mountChat } from './chat.js';
 
-const $ = (s, r = document) => r.querySelector(s);
 const view = $('#view');
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/* ---------- icons ---------- */
-const P = {
-  cap: 'M2 9l10-5 10 5-10 5z M6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5',
-  people: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 20a6 6 0 0 1 12 0 M17 11a3 3 0 0 0 0-5 M21 20a5 5 0 0 0-4-5',
-  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21a8 8 0 0 1 16 0',
-  card: 'M2 6h20v12H2z M2 10h20 M6 15h4',
-  wallet: 'M2 7h20v10H2z M12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
-  shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z M9 12l2 2 4-4',
-  award: 'M12 3a5 5 0 1 0 0 10 5 5 0 0 0 0-10z M8.5 12.5L7 21l5-3 5 3-1.5-8.5',
-  form: 'M6 3h9l4 4v14H6z M9 13l2 2 4-4',
-  arrow: 'M5 12h14 M13 6l6 6-6 6',
-  back: 'M19 12H5 M11 6l-6 6 6 6',
-  room: 'M3 4h18v11H3z M12 15v4 M8 21l4-2 4 2',
-  task: 'M9 4h6v3H9z M7 5H5v16h14V5h-2 M9 12h6 M9 16h4',
-  book: 'M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z M20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z',
-  pencil: 'M4 20l1-4L16 5l3 3L8 19z M14 7l3 3',
-  monitor: 'M3 4h18v12H3z M8 20h8 M12 16v4',
-  chart: 'M4 20V10 M10 20V4 M16 20v-8 M22 20H2',
-  box: 'M3 7l9-4 9 4v10l-9 4-9-4z M3 7l9 4 9-4 M12 11v10',
-  mega: 'M3 11v3h3l8 4V7L6 11z M18 9a4 4 0 0 1 0 6',
-  cal: 'M4 5h16v16H4z M4 10h16 M8 3v4 M16 3v4',
-  image: 'M3 4h18v16H3z M8 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M3 17l5-5 4 4 3-3 6 6',
-  folder: 'M3 6h6l2 2h10v11H3z',
-  bulb: 'M9 18h6 M10 21h4 M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z',
-  phone: 'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z',
-  out: 'M9 4H4v16h5 M16 8l4 4-4 4 M20 12H9'
-};
-const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true"><path d="${P[n]}"/></svg>`;
-
-/* ---------- roles ---------- */
+/* ---------- roles and dashboards ---------- */
 const ROLES = {
-  student: { label: 'Student', sub: 'Classes, tests and results', idLabel: 'Reg. number', idHint: 'Example: AAC/2026/001', icon: 'cap', db: 'student' },
+  student: { label: 'Student', sub: 'Curriculum, notes and fees', idLabel: 'Reg. number', idHint: 'Example: AAC/2026/001', icon: 'cap', db: 'student' },
   parent: { label: 'Parent', sub: 'Fees, results and notices', idLabel: 'Phone number or email', idHint: 'The one you gave the school', icon: 'people', db: 'parent' },
-  teacher: { label: 'Teacher', sub: 'Scores, lessons and tests', idLabel: 'Staff ID or email', idHint: 'Given to you by the school', icon: 'user', db: 'teacher' },
-  payment: { label: 'Payment', sub: 'Pay school fees', idLabel: 'Phone number or email', idHint: 'The parent account you registered', icon: 'card', db: 'parent' },
-  bursar: { label: 'Bursar', sub: 'Fees and receipts', idLabel: 'Staff ID or email', idHint: 'Given to you by the school', icon: 'wallet', db: 'bursar' },
-  admin: { label: 'Admin', sub: 'School management', idLabel: 'Email or staff ID', idHint: 'Given to you by the school', icon: 'shield', db: 'admin' }
+  teacher: { label: 'Teacher', sub: 'Lesson notes and curriculum', idLabel: 'Staff ID or email', idHint: 'Given to you by the school', icon: 'user', db: 'teacher' },
+  payment: { label: 'Payment', sub: 'See and pay school fees', idLabel: 'Phone number or email', idHint: 'The parent account you registered', icon: 'card', db: 'parent' },
+  bursar: { label: 'Bursar', sub: 'Fees, payments and receipts', idLabel: 'Staff ID or email', idHint: 'Given to you by the school', icon: 'wallet', db: 'bursar' },
+  admin: { label: 'Admin', sub: 'Manage everything', idLabel: 'Email or staff ID', idHint: 'Given to you by the school', icon: 'shield', db: 'admin' }
 };
+const SOON = n => [n[0], n[1], null];
 const TILES = {
-  student: [['Classroom', 'room'], ['Assignments', 'task'], ['Library', 'book'], ['Tests', 'form'], ['Examination', 'pencil'], ['CBT', 'monitor'], ['Scorecard', 'chart'], ['Announcements', 'mega'], ['Events', 'cal']],
-  parent: [['Pay fees', 'card'], ['Results', 'award'], ['Scorecard', 'chart'], ['Announcements', 'mega'], ['PTA', 'people'], ['Events', 'cal'], ['School album', 'image']],
-  teacher: [['Classroom', 'room'], ['Assignments', 'task'], ['Tests', 'form'], ['Examination', 'pencil'], ['CBT', 'monitor'], ['Enter scores', 'chart'], ['Coaching and lessons', 'bulb'], ['Library', 'book']],
-  bursar: [['Fee records', 'wallet'], ['Payments', 'card'], ['Debtors', 'people'], ['Receipts', 'form'], ['Reports', 'chart']],
-  admin: [['Applications', 'form', '#/applications'], ['Students', 'cap'], ['Staff', 'user'], ['Result PINs', 'award'], ['Inventory', 'box'], ['Announcements', 'mega'], ['Events', 'cal'], ['Projects', 'folder'], ['Sessions', 'cal']]
+  student: [['Curriculum', 'list', '#/p/curriculum'], ['Lesson notes', 'book', '#/p/notes'], ['Library and files', 'folder', '#/p/library'], ['Fees', 'wallet', '#/p/fees'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], SOON(['Assignments', 'task']), SOON(['Tests', 'form']), SOON(['CBT', 'monitor']), SOON(['Scorecard', 'chart'])],
+  parent: [['Fees and payments', 'card', '#/p/fees'], ['Check result', 'award', '#/result'], ['Curriculum', 'list', '#/p/curriculum'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], ['Feedback box', 'mail', '#/feedback']],
+  teacher: [['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], SOON(['Assignments', 'task']), SOON(['Tests', 'form']), SOON(['Enter scores', 'chart'])],
+  bursar: [['Fee overview', 'chart', '#/p/debtors'], ['Announcements', 'mega', '#/announcements']],
+  admin: [['Accounts and passwords', 'user', '#/accounts'], ['Upload results', 'award', '#/results-import'], ['Fee overview', 'chart', '#/p/debtors'], ['Announcements page', 'mega', '#/announcements'], ['School album page', 'image', '#/album']]
 };
 
-const CLASS_GROUPS = [
-  ['Early years', ['Creche', 'Nursery 1', 'Nursery 2']],
-  ['Primary', ['Primary 1', 'Primary 2', 'Primary 3', 'Primary 4', 'Primary 5', 'Primary 6']],
-  ['Junior secondary', ['JSS 1', 'JSS 2', 'JSS 3']],
-  ['Senior secondary', ['SSS 1', 'SSS 2', 'SSS 3']]
-];
-
-/* ---------- small UI helpers ---------- */
-function toast(msg) {
-  const t = $('#toast'); t.textContent = msg; t.hidden = false;
-  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 3800);
+/* ---------- site settings in the page shell ---------- */
+async function applySettings() {
+  const s = await data.getSettings(true);
+  const set = (id, fn) => { const e = $(id); if (e) fn(e); };
+  set('#brandName', e => { e.textContent = s.schoolName; }); set('#topName', e => { e.textContent = s.schoolName; });
+  set('#brandMotto', e => { e.textContent = s.motto; }); set('#brandAddr', e => { e.textContent = s.address; });
+  set('#brandPhones', e => { e.innerHTML = s.phones.map(p => `<a href="tel:${esc(p.tel)}">${esc(p.label)}</a>`).join(' &middot; '); });
+  set('#footName', e => { e.textContent = s.schoolName; });
+  const first = $('#tabCall'); if (first && s.phones[0]) first.href = 'tel:' + s.phones[0].tel;
 }
-function field({ id, label, type = 'text', value = '', required = true, hint = '', extra = '', opt = false, msg = '' }) {
-  return `<div class="field" data-field="${id}">
-    <label for="${id}">${label}${opt ? ' <span class="opt">(optional)</span>' : ''}</label>
-    <input class="input" id="${id}" name="${id}" type="${type}" value="${esc(value)}" ${required ? 'required' : ''} ${msg ? `data-msg="${esc(msg)}"` : ''} aria-describedby="${id}-e" ${extra}>
-    ${hint ? `<span class="hint">${hint}</span>` : ''}<span class="error" id="${id}-e" role="alert"></span></div>`;
-}
-function selectField({ id, label, value = '', options, required = true, placeholder = 'Select', msg = '' }) {
-  return `<div class="field" data-field="${id}"><label for="${id}">${label}</label>
-    <select class="input" id="${id}" name="${id}" ${required ? 'required' : ''} ${msg ? `data-msg="${esc(msg)}"` : ''} aria-describedby="${id}-e">
-    <option value="">${placeholder}</option>${options}</select><span class="error" id="${id}-e" role="alert"></span></div>`;
-}
-const opt = (v, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(v)}</option>`;
-
-function validate(form) {
-  let first = null;
-  form.querySelectorAll('.input').forEach(el => {
-    const wrap = el.closest('[data-field]'); const err = wrap && wrap.querySelector('.error');
-    if (!err) return;
-    if (el.checkValidity()) { err.textContent = ''; el.removeAttribute('aria-invalid'); }
-    else { err.textContent = el.dataset.msg || el.validationMessage; el.setAttribute('aria-invalid', 'true'); first = first || el; }
-  });
-  if (first) first.focus();
-  return !first;
-}
-const showPw = btn => { const i = btn.previousElementSibling; const s = i.type === 'password'; i.type = s ? 'text' : 'password'; btn.textContent = s ? 'Hide' : 'Show'; btn.setAttribute('aria-pressed', String(s)); };
+window.addEventListener('aac:settings', applySettings);
 
 /* ---------- views ---------- */
-function contactBlock() {
-  return `<div class="mobile-contact"><div class="contact-row">${ic('phone')}<span><a href="tel:+2348057394188">0805 739 4188</a> &middot; <a href="tel:+2348102776581">0810 277 6581</a> &middot; <a href="tel:+2348038043666">0803 804 3666</a></span></div>
-  <div class="contact-row">${ic('cal')}<span>Zone 2, Papa Olorunsogo, Apete, Ibadan, Oyo State</span></div></div>`;
+async function contactBlock() {
+  const s = await data.getSettings();
+  return `<div class="mobile-contact"><div class="contact-row">${ic('phone')}<span>${s.phones.map(p => `<a href="tel:${esc(p.tel)}">${esc(p.label)}</a>`).join(' &middot; ')}</span></div>
+  <div class="contact-row">${ic('pin')}<span>${esc(s.address)}</span></div></div>`;
 }
 
-function vHome() {
+async function vHome() {
+  const s = await data.getSettings();
   const portals = Object.entries(ROLES).map(([k, r]) => `<a class="portal" href="#/login/${k}"><span class="ico">${ic(r.icon)}</span><span><b>${r.label} portal</b><small>${r.sub}</small></span></a>`).join('');
-  return { title: 'Portals', nav: 'home', html: `
-    <p class="eyebrow">Welcome</p>
-    <h1 class="h1">Sign in to your portal</h1>
-    <p class="lead">Choose who you are to continue.</p>
+  return { title: 'Portals', nav: 'home', html: `${await pt.albumCarousel()}
+    <p class="eyebrow">Welcome</p><h1 class="h1">${esc(s.welcomeTitle)}</h1><p class="lead">Choose who you are to continue.</p>
     <div class="portals">${portals}</div>
     <div class="actions">
       <a class="action action-red" href="#/apply">${ic('form')}<b>Apply for admission</b><span>Creche to SSS 3, 2026/2027 session</span></a>
       <a class="action action-yellow" href="#/result">${ic('award')}<b>Check result</b><span>Use your PIN and reg. number</span></a>
-    </div>${contactBlock()}` };
+    </div>
+    <a class="action action-feedback" href="#/about" style="margin-bottom:0">${ic('cap')}<b>About the school</b><span>Classes, subjects, teachers, facilities and activities</span></a>
+    <a class="action action-feedback" href="#/feedback">${ic('mail')}<b>Enquiry, complaint or suggestion?</b><span>Open to everyone. Write to the school.</span></a>
+    ${await pt.prefectsStrip()}${await contactBlock()}`, bind() { pt.bindCarousel(view); } };
 }
 
 function vLogin(role) {
@@ -113,8 +65,7 @@ function vLogin(role) {
   const tabs = Object.entries(ROLES).map(([k, x]) => `<a href="#/login/${k}" ${k === role ? 'aria-current="page"' : ''}>${x.label}</a>`).join('');
   return { title: r.label + ' sign in', nav: 'home', html: `
     <a class="back" href="#/">${ic('back')} All portals</a>
-    <p class="eyebrow">Secure sign in</p>
-    <h1 class="h1">${r.label} portal</h1>
+    <p class="eyebrow">Secure sign in</p><h1 class="h1">${r.label} portal</h1>
     <div class="roles" role="navigation" aria-label="Switch portal">${tabs}</div>
     <form class="card" id="loginForm" novalidate style="margin-top:14px">
       ${field({ id: 'identifier', label: r.idLabel, hint: r.idHint, extra: 'autocomplete="username" autocapitalize="none" spellcheck="false"' })}
@@ -123,50 +74,40 @@ function vLogin(role) {
         <span class="error" id="password-e" role="alert"></span></div>
       <div id="loginErr" class="error" role="alert" style="margin-top:12px"></div>
       <button class="btn btn-block" style="margin-top:18px" type="submit">Sign in ${ic('arrow')}</button>
-      <div class="row-between" style="margin-top:16px"><span class="hint">Forgot your password? Call the school office.</span>
-        <a class="link" href="tel:+2348057394188">Call 0805 739 4188</a></div>
+      <div class="row-between" style="margin-top:16px"><span class="hint">Forgot your password? Call the school office.</span></div>
     </form>
     <p class="hint" style="margin-top:16px">New family? <a class="link" href="#/apply">Apply for admission</a></p>`,
     bind() {
       $('#pwToggle').onclick = e => showPw(e.currentTarget);
       $('#loginForm').onsubmit = async e => {
         e.preventDefault(); const f = e.currentTarget; if (!validate(f)) return;
-        const btn = f.querySelector('button[type=submit]'); btn.disabled = true; btn.firstChild.textContent = 'Signing in… ';
+        const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
         const res = await data.signIn(r.db, f.identifier.value, f.password.value);
-        btn.disabled = false; btn.firstChild.textContent = 'Sign in ';
+        btn.disabled = false;
         if (!res.ok) { $('#loginErr').textContent = res.message; return; }
+        if (role === 'payment') { const s = res.session; s.role = 'parent'; }
         location.hash = '#/dashboard';
       };
     } };
 }
 
-async function vDashboard() {
-  const s = await data.getSession();
-  if (!s) { location.hash = '#/login/student'; return null; }
+async function vDashboard(s) {
   const role = s.role === 'payment' ? 'parent' : s.role;
-  const tiles = (TILES[role] || []).map(([n, i, href]) => href
-    ? `<a class="tile" href="${href}">${ic(i)}<b>${n}</b><small>Open</small></a>`
-    : `<div class="tile" aria-disabled="true">${ic(i)}<b>${n}</b><small><span class="pill">Coming soon</span></small></div>`).join('');
+  const mine = (TILES[role] || []).slice(); let tiles = mine;
+  if (role === 'admin') tiles = [...hubTiles(s).map(t => [t[0], t[1], t[2]]), ...mine];
+  else if (role === 'teacher') tiles = [...hubTiles(s), ...mine];
+  else if (role === 'bursar') tiles = [...hubTiles(s), ...mine];
+  const html = tiles.map(([n, i, href]) => href ? `<a class="tile" href="${href}">${ic(i)}<b>${esc(n)}</b><small>Open</small></a>`
+    : `<div class="tile" aria-disabled="true">${ic(i)}<b>${esc(n)}</b><small><span class="pill">Coming soon</span></small></div>`).join('');
+  const anns = (await pt.announcementsFor(s, 3));
+  const showPrefects = ['student', 'parent', 'teacher', 'admin'].includes(role);
   return { title: 'Dashboard', nav: 'home', html: `
-    <p class="eyebrow">${esc(role)} portal</p>
-    <h1 class="h1">Welcome, ${esc(s.name)}</h1>
-    <p class="lead">You are signed in. These are the modules for your portal. The ones marked "Coming soon" are being added.</p>
-    <div class="tiles">${tiles}</div>
+    <p class="eyebrow">${esc(role)} portal</p><h1 class="h1">Welcome, ${esc(s.name)}</h1>
+    <div class="tiles" style="margin-top:20px">${html}</div>
+    ${anns.length ? `<section style="margin-top:28px"><div class="row-between"><h2 class="h2s">${ic('mega')} Latest announcements</h2><a class="link" href="#/announcements">See all</a></div><div class="anns">${anns.map(pt.annCard).join('')}</div></section>` : ''}
+    ${showPrefects ? await pt.prefectsStrip() : ''}
     <button class="btn btn-ghost" id="out" style="margin-top:26px" type="button">${ic('out')} Sign out</button>`,
     bind() { $('#out').onclick = async () => { await data.signOut(); location.hash = '#/'; }; } };
-}
-
-async function vApplications() {
-  const s = await data.getSession();
-  if (!s || (s.role !== 'admin')) { location.hash = '#/login/admin'; return null; }
-  const rows = await data.listApplications();
-  const body = rows.length ? rows.map(a => `<tr><td>${esc(a.ref)}</td><td>${esc(a.firstName)} ${esc(a.surname)}</td><td>${esc(a.classApplied)}</td><td>${esc(a.guardianName)}<br><a class="link" href="tel:${esc(a.phone)}">${esc(a.phone)}</a></td></tr>`).join('')
-    : `<tr><td colspan="4" class="hint">No applications yet.</td></tr>`;
-  return { title: 'Applications', nav: 'home', html: `
-    <a class="back" href="#/dashboard">${ic('back')} Dashboard</a>
-    <h1 class="h1">Applications</h1>
-    <p class="lead">${rows.length} received${data.isLive ? '' : ' (demo mode: saved on this device only)'}.</p>
-    <div class="card tbl-wrap" style="margin-top:20px"><table><thead><tr><th>Ref</th><th>Child</th><th>Class</th><th>Parent</th></tr></thead><tbody>${body}</tbody></table></div>` };
 }
 
 /* ---- application form ---- */
@@ -175,7 +116,7 @@ const STEPS = ['Child', 'Parent', 'Review'];
 function stepper() { return `<ol class="steps" aria-label="Progress">${STEPS.map((s, i) => `<li class="${i + 1 === appStep ? 'on' : i + 1 < appStep ? 'done' : ''}" ${i + 1 === appStep ? 'aria-current="step"' : ''}>${i + 1}. ${s}</li>`).join('')}</ol>`; }
 
 function vApply() {
-  const v = appState; const today = new Date().toISOString().slice(0, 10);
+  const v = appState; const today = todayStr();
   let inner = '';
   if (appStep === 1) {
     const classOpts = CLASS_GROUPS.map(([g, list]) => `<optgroup label="${g}">${list.map(c => opt(c, v.classApplied)).join('')}</optgroup>`).join('');
@@ -232,7 +173,7 @@ function vApply() {
 }
 function renderDone(a) {
   document.title = 'Application received | All Ages College';
-  view.innerHTML = `<div class="ok-box"><p class="eyebrow" style="color:var(--ok)">Application received</p>
+  $('#view').innerHTML = `<div class="ok-box"><p class="eyebrow" style="color:var(--ok)">Application received</p>
     <h1 class="h1">Thank you, ${esc(a.guardianName.split(' ')[0])}</h1>
     <p>Your reference number for ${esc(a.firstName)} ${esc(a.surname)} (${esc(a.classApplied)}):</p>
     <div class="refno" id="ref">${esc(a.ref)}</div>
@@ -241,12 +182,12 @@ function renderDone(a) {
     <button class="btn btn-ghost" id="print" type="button">Print</button><a class="btn btn-ghost" href="#/">Done</a></div>`;
   $('#copy').onclick = async () => { try { await navigator.clipboard.writeText(a.ref); toast('Reference copied'); } catch { toast('Copy failed. Write the number down.'); } };
   $('#print').onclick = () => window.print();
-  view.focus(); window.scrollTo(0, 0);
+  $('#view').focus(); window.scrollTo(0, 0);
 }
 
 /* ---- result ---- */
 function vResult() {
-  const terms = ['First Term', 'Second Term', 'Third Term'];
+  const terms = TERMS;
   return { title: 'Check result', nav: 'result', html: `
     <p class="eyebrow">Result checking</p>
     <h1 class="h1">Check your result</h1>
@@ -288,19 +229,47 @@ function resultCard(d, demo) {
 }
 
 /* ---------- router ---------- */
+let token = 0;
 async function render() {
-  const [route = '', arg] = location.hash.replace(/^#\/?/, '').split('/');
+  const my = ++token;
+  const parts = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
+  const [route = '', a, b] = parts;
+  const s = await data.getSession();
+  const need = () => { location.hash = '#/login/student'; return null; };
   let v;
-  if (route === 'login') v = vLogin(arg);
-  else if (route === 'dashboard') v = await vDashboard();
-  else if (route === 'applications') v = await vApplications();
-  else if (route === 'apply') v = vApply();
-  else if (route === 'result') v = vResult();
-  else v = vHome();
-  if (!v) return;
-  view.innerHTML = v.html; document.title = `${v.title} | All Ages College`;
-  document.querySelectorAll('[data-nav]').forEach(a => { if (a.dataset.nav === v.nav) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  try {
+    if (route === 'login') v = vLogin(a);
+    else if (route === 'dashboard') v = s ? await vDashboard(s) : need();
+    else if (route === 'manage') v = s ? await vManage(a, b, s) : need();
+    else if (route === 'p') {
+      if (!s) v = need();
+      else if (a === 'curriculum') v = await pt.vCurriculum(s);
+      else if (a === 'notes') v = await pt.vNotes(s);
+      else if (a === 'library') v = await pt.vLibrary(s);
+      else if (a === 'fees') v = await pt.vFees(s);
+      else if (a === 'debtors') v = ['admin', 'bursar'].includes(s.role) ? await pt.vDebtors() : null;
+    }
+    else if (route === 'receipt') v = s ? await pt.vReceipt(a) : need();
+    else if (route === 'results-import') v = s && s.role === 'admin' ? await pt.vResultsImport() : need();
+    else if (route === 'about') v = await pt.vAbout();
+    else if (route === 'accounts') v = s && s.role === 'admin' ? await pt.vAccounts() : need();
+    else if (route === 'announcements') v = await pt.vAnnouncements(s);
+    else if (route === 'album') v = await pt.vAlbum();
+    else if (route === 'feedback') v = pt.vFeedback();
+    else if (route === 'more') v = pt.vMore(s, (await data.getSettings()).phones);
+    else if (route === 'apply') v = vApply();
+    else if (route === 'result') v = vResult();
+    else v = await vHome();
+  } catch (e) { console.error(e); v = { title: 'Error', nav: 'home', html: '<h1 class="h1">Something went wrong</h1><p class="lead">Please refresh the page. If it keeps happening, call the school office.</p>' }; }
+  if (my !== token) return;
+  if (!v) { if (location.hash.startsWith('#/login')) return; view.innerHTML = '<h1 class="h1">Not available</h1><p class="lead">You do not have access to this page.</p><p><a class="btn" href="#/dashboard">Back</a></p>'; return; }
+  view.innerHTML = v.html; document.title = `${v.title} | ${(await data.getSettings()).schoolName}`;
+  $$('[data-nav]').forEach(x => { if (x.dataset.nav === v.nav) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current'); });
+  const acct = s ? ['#/dashboard', 'Dashboard'] : ['#/', 'Portals'];
+  $$('[data-nav="home"]').forEach(x => { x.href = acct[0]; const sp = x.querySelector('span') || x; if (x.classList.contains('t')) sp.textContent = acct[1]; });
   if (v.bind) v.bind();
+  await data.hydrate(view);
+  if (my !== token) return;
   window.scrollTo(0, 0); view.focus({ preventScroll: true });
 }
 window.addEventListener('hashchange', render);
@@ -308,7 +277,7 @@ window.addEventListener('hashchange', render);
 /* ---------- demo banner, install, service worker ---------- */
 if (!data.isLive) {
   const b = $('#demoBanner'); b.hidden = false;
-  b.innerHTML = '<b>Demo mode.</b> Nothing is saved on a server. Demo sign in: <b>demo</b> / <b>demo1234</b>. Sample result: PIN <b>AAC-DEMO-2026</b>, reg. no. <b>AAC/DEMO/001</b>.';
+  b.innerHTML = '<b>Demo mode.</b> Nothing is saved on a server. Demo sign in for any portal: <b>demo</b> / <b>demo1234</b>. Sample result: PIN <b>AAC-DEMO-2026</b>, reg. no. <b>AAC/DEMO/001</b>.';
 }
 let deferred;
 const installBtn = $('#installBtn');
@@ -323,4 +292,4 @@ installBtn.onclick = async () => {
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is optional */ });
 }
-render();
+applySettings(); mountChat(); render();
