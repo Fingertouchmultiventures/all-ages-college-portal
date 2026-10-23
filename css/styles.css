@@ -353,3 +353,4 @@ body.wide #view{max-width:1180px;padding-top:0}
 .topnav>a[aria-current="page"]{background:#EEF1FA;color:var(--red)}
 .aslide{aspect-ratio:auto!important;position:relative}.aslide.has-img>img{object-fit:contain}.aslide .atext{min-width:0}
 .aslide .pill{align-self:flex-start}
+.msel{width:22px;height:22px;accent-color:var(--navy);flex:none}.toolbar{align-items:center}

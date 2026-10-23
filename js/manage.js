@@ -1,6 +1,7 @@
 // Generic manager: list, add, edit, delete, upload. Driven by schema.js.
 import * as data from './data.js';
 import { buildCurriculum, lessonDraft } from './curriculum-data.js';
+import { SAMPLE_NOTEBOOKS } from './notebooks-data.js';
 import { COLS, ADMIN_ORDER } from './schema.js';
 import { CLASSES, TERMS } from './ui.js';
 import { $, esc, ic, opt, validate, toast, money, today, norm, toCsv, csvParse, download } from './ui.js';
@@ -35,7 +36,6 @@ export async function vManage(col, sub, s) {
 /* ---------- list ---------- */
 async function vList(col, c, s, ctx) {
   let rows = await data.list(col);
-  if (c.ownOnly && s.role === 'teacher') rows = rows.filter(r => r.owner === s.id);
   if (c.sort) rows.sort(c.sort);
   const imgField = c.fields.find(f => f.type === 'image'); const fileField = c.fields.find(f => f.type === 'file');
   const hasFile = !c.single && c.fields.some(f => f.type === 'file' || f.type === 'image');
@@ -44,7 +44,7 @@ async function vList(col, c, s, ctx) {
     const fileField2 = fileField || (imgField && !isImg(r[imgField && imgField.key]) ? imgField : null);
     const ff2 = fileField2 && r[fileField2.key] ? fileField2 : null;
     const fl = ff2 ? `<a class="link" ${data.fileAttr(r[ff2.key])} target="_blank" rel="noopener">${ic('file')} ${esc(r[ff2.key].name || 'File')}</a>` : '';
-    return `<li class="mrow">${th}<div class="mrow-main"><b>${esc(c.title(r, ctx))}</b><span>${esc(c.sub(r, ctx))}</span>${fl}</div>
+    return `<li class="mrow">${c.noDelete ? '' : `<input type="checkbox" class="msel" data-id="${esc(r.id)}" aria-label="Select ${esc(c.title(r, ctx))}">`}${th}<div class="mrow-main"><b>${esc(c.title(r, ctx))}</b><span>${esc(c.sub(r, ctx))}</span>${fl}</div>
       <div class="mrow-actions">${c.extra ? c.extra(r) : ''}<a class="btn btn-ghost btn-sm" href="#/manage/${col}/${encodeURIComponent(r.id)}">${c.noCreate ? 'Open' : 'Edit'}</a>
       <button class="btn btn-ghost btn-sm del" data-del="${esc(r.id)}" type="button" aria-label="Delete ${esc(c.title(r, ctx))}">${ic('trash')}</button></div></li>`;
   }).join('');
@@ -54,7 +54,8 @@ async function vList(col, c, s, ctx) {
     <div class="row-between" style="margin-top:6px"><div><p class="eyebrow">Manage</p><h1 class="h1">${c.label}</h1></div>
       ${c.noCreate ? '' : `<a class="btn" href="#/manage/${col}/new">${ic('plus')} Add ${c.one}</a>`}</div>
     <div class="row-between" style="margin:18px 0 10px"><div class="searchbox">${ic('search')}<input id="msearch" class="input" type="search" placeholder="Search ${c.label.toLowerCase()}" aria-label="Search"></div>
-      <div class="toolbar">${hasFile ? `<button class="btn btn-sm" id="mbulk" type="button">${ic('plus')} Bulk upload files</button>` : ''}${col === 'curriculum' && s.role === 'admin' ? `<button class="btn btn-sm" id="mstd" type="button">${ic('list')} Load Nigerian curriculum (Creche to SSS 3)</button>` : ''}${col === 'lessonNotes' ? `<button class="btn btn-sm" id="mdraft" type="button">${ic('book')} Draft notes from curriculum</button>` : ''}${c.csv ? `<button class="btn btn-sm" id="mcsv" type="button">${ic('plus')} Import CSV</button>` : ''}
+      <div class="toolbar">${hasFile ? `<button class="btn btn-sm" id="mbulk" type="button">${ic('plus')} Bulk upload files</button>` : ''}${col === 'curriculum' && s.role === 'admin' ? `<button class="btn btn-sm" id="mstd" type="button">${ic('list')} Load Nigerian curriculum (Creche to SSS 3)</button>` : ''}${col === 'notebooks' ? `<button class="btn btn-sm" id="mnb" type="button">${ic('book')} Load sample notebooks</button>` : ''}${col === 'lessonNotes' ? `<button class="btn btn-sm" id="mdraft" type="button">${ic('book')} Draft notes from curriculum</button>` : ''}${c.csv ? `<button class="btn btn-sm" id="mcsv" type="button">${ic('plus')} Import CSV</button>` : ''}
+      ${rows.length ? `<label class="check mini" style="margin:0"><input type="checkbox" id="msall"> Select all shown</label><button class="btn btn-ghost btn-sm" id="mdelsel" type="button" hidden>${ic('trash')} Delete selected (<span id="mselN">0</span>)</button>` : ''}
       <button class="btn btn-ghost btn-sm" id="mexport" type="button">${ic('download')} Export CSV</button></div></div>
     <div id="mpanel"></div>
     <p class="hint" id="mcount">${rows.length} ${rows.length === 1 ? 'record' : 'records'}</p>
@@ -65,6 +66,14 @@ async function vList(col, c, s, ctx) {
         const keys = c.fields.filter(f => f.type !== 'file' && f.type !== 'image').map(f => f.key);
         download(`${col}-${today()}.csv`, toCsv([c.fields.filter(f => keys.includes(f.key)).map(f => f.label), ...rows.map(r => keys.map(k => r[k]))]));
       };
+      const sels = () => [...document.querySelectorAll('.msel')].filter(x => x.checked && !x.closest('li').hidden);
+      const upd = () => { const n = sels().length; const b = $('#mdelsel'); if (b) { b.hidden = !n; $('#mselN').textContent = n; } };
+      document.querySelectorAll('.msel').forEach(x => { x.onchange = upd; });
+      if ($('#msall')) $('#msall').onchange = e => { document.querySelectorAll('.msel').forEach(x => { if (!x.closest('li').hidden) x.checked = e.target.checked; }); upd(); };
+      if ($('#mdelsel')) $('#mdelsel').onclick = async () => {
+        const ids = sels().map(x => x.dataset.id); if (!ids.length || !confirm(`Delete ${ids.length} ${c.label.toLowerCase()}? This cannot be undone.`)) return;
+        try { await data.removeMany(col, ids); toast(`${ids.length} deleted`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); }
+      };
       document.querySelectorAll('[data-confirm]').forEach(b => b.onclick = async () => {
         const all = rows.filter(x => x.receipt === b.dataset.confirm && x.status === 'Pending'); b.disabled = true;
         try { await data.saveMany('payments', all.map(x => ({ ...x, status: 'Confirmed', enteredBy: s.name }))); toast(`Confirmed ${all.length} item(s)`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); b.disabled = false; }
@@ -74,6 +83,7 @@ async function vList(col, c, s, ctx) {
         $('#mstd').disabled = true; $('#mstd').textContent = 'Loading…';
         try { const n = await data.saveMany('curriculum', buildCurriculum()); toast(`${n} curriculum entries loaded`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); $('#mstd').disabled = false; }
       };
+      if ($('#mnb')) $('#mnb').onclick = async () => { try { const n = await data.saveMany('notebooks', SAMPLE_NOTEBOOKS.map(x => ({ ...x, owner: s.id }))); toast(`${n} sample notebooks loaded`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); } };
       if ($('#mdraft')) $('#mdraft').onclick = () => draftPanel(s);
       if ($('#mbulk')) $('#mbulk').onclick = () => bulkPanel(col, c, s, ctx);
       if ($('#mcsv')) $('#mcsv').onclick = () => csvPanel(col, c, s, ctx);
@@ -114,7 +124,6 @@ async function vForm(col, c, id, s, ctx) {
   let rec = {};
   if (c.single) { const cur = await data.getSettings(true); const { phones, ...rest } = cur; rec = { ...rest, id: c.single }; }
   else if (id) { rec = (await data.list(col)).find(r => r.id === id) || {}; if (!rec.id && !c.single) return { title: c.label, nav: 'home', html: `<a class="back" href="#/manage/${col}">${ic('back')} Back</a><p>That record was not found.</p>` }; }
-  if (c.ownOnly && s.role === 'teacher' && rec.id && rec.owner !== s.id) return { title: c.label, nav: 'home', html: `<a class="back" href="#/manage/${col}">${ic('back')} Back</a><p>You can only edit your own ${c.label.toLowerCase()}.</p>` };
   const isNew = !rec.id || (c.single && false);
   return {
     title: (isNew ? 'Add ' : 'Edit ') + c.one, nav: 'home', html: `
@@ -165,7 +174,7 @@ async function vForm(col, c, id, s, ctx) {
           if (c.single) out.id = c.single;
           if (c.idFrom) out.id = c.idFrom(out);
           if (col === 'students') out.reg_norm = norm(out.reg_no);
-          if (isNew && col === 'lessonNotes') { out.owner = s.id; out.teacherName = s.name; }
+          if (isNew && ['lessonNotes', 'notebooks', 'assignments', 'tests'].includes(col)) { out.owner = s.id; out.teacherName = s.name; }
           if (isNew && col === 'payments') { out.receipt = 'RCT-' + Date.now().toString(36).toUpperCase().slice(-6); out.enteredBy = s.name; }
           await data.save(col, out);
           if (col === 'settings') { await data.getSettings(true); window.dispatchEvent(new Event('aac:settings')); }

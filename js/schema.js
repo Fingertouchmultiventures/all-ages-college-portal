@@ -81,7 +81,7 @@ export const COLS = {
     ]
   },
   lessonNotes: {
-    label: 'Lesson notes', one: 'lesson note', icon: 'book', roles: ['admin', 'teacher'], ownOnly: true,
+    label: 'Lesson notes', one: 'lesson note', icon: 'book', roles: ['admin', 'teacher'],
     title: r => r.title, sub: r => `${r.class} · ${r.subject}${r.week ? ' · ' + r.week : ''}${r.teacherName ? ' · ' + r.teacherName : ''}`,
     sort: (a, b) => String(b._created || '').localeCompare(String(a._created || '')),
     fields: [
@@ -91,6 +91,69 @@ export const COLS = {
       { key: 'week', label: 'Week (optional)', type: 'text', hint: 'Example: Week 3' },
       { key: 'body', label: 'Lesson note', type: 'textarea', required: true },
       { key: 'file', label: 'Attach a file (optional)', type: 'file' }
+    ]
+  },
+  notebooks: {
+    label: 'Notebooks', one: 'notebook', icon: 'book', roles: ['admin', 'teacher'],
+    title: r => r.title, sub: r => `${r.class} · ${r.subject}${r.term ? ' · ' + r.term : ''}${r.teacherName ? ' · ' + r.teacherName : ''}`,
+    sort: (a, b) => CLASSES.indexOf(a.class) - CLASSES.indexOf(b.class) || String(a.subject).localeCompare(String(b.subject)) || String(a.title).localeCompare(String(b.title)),
+    fields: [
+      { key: 'class', label: 'Class level', type: 'select', options: CLASSES, required: true },
+      { key: 'subject', label: 'Subject', type: 'text', required: true },
+      { key: 'term', label: 'Term', type: 'select', options: [...TERMS, 'Whole session'] },
+      { key: 'title', label: 'Topic', type: 'text', required: true },
+      { key: 'body', label: 'Notebook (full explanation)', type: 'textarea', hint: 'Write the full explanation. Use "# Heading", "## Sub-heading", "- bullet", "1. numbered", and **bold**. Or just attach a PDF below.' },
+      { key: 'file', label: 'Or upload the notebook (pdf, doc, jpg...)', type: 'file' }
+    ]
+  },
+  assignments: {
+    label: 'Assignments', one: 'assignment', icon: 'task', roles: ['admin', 'teacher'],
+    title: r => r.title, sub: r => `${r.class} · ${r.subject}${r.due ? ' · Due ' + fmtDate(r.due) : ''}${r.teacherName ? ' · ' + r.teacherName : ''}`,
+    sort: (a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || '')),
+    fields: [
+      { key: 'class', label: 'Class', type: 'select', options: CLASSES, required: true },
+      { key: 'subject', label: 'Subject', type: 'text', required: true },
+      { key: 'title', label: 'Title', type: 'text', required: true },
+      { key: 'instructions', label: 'Instructions / questions', type: 'textarea', required: true },
+      { key: 'session', label: 'Session', type: 'select', options: CONFIG.SESSIONS },
+      { key: 'term', label: 'Term', type: 'select', options: TERMS },
+      { key: 'date', label: 'Date given', type: 'date', default: 'today' },
+      { key: 'due', label: 'Submission date', type: 'date' },
+      { key: 'file', label: 'Attach worksheet (pdf, jpg, doc...)', type: 'file' }
+    ]
+  },
+  tests: {
+    label: 'Tests and exams', one: 'test', icon: 'form', roles: ['admin', 'teacher'],
+    title: r => r.title, sub: r => `${r.class} · ${r.subject} · ${r.kind || 'Test'}${r.date ? ' · ' + fmtDate(r.date) : ''}`,
+    sort: (a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || '')),
+    fields: [
+      { key: 'class', label: 'Class', type: 'select', options: CLASSES, required: true },
+      { key: 'subject', label: 'Subject', type: 'text', required: true },
+      { key: 'title', label: 'Title', type: 'text', required: true, hint: 'Example: First CA, Mid-term test, Exam' },
+      { key: 'kind', label: 'Kind', type: 'select', options: ['Test', 'Exam', 'Quiz', 'Practical'], default: 'Test' },
+      { key: 'session', label: 'Session', type: 'select', options: CONFIG.SESSIONS },
+      { key: 'term', label: 'Term', type: 'select', options: TERMS },
+      { key: 'date', label: 'Date', type: 'date' },
+      { key: 'time', label: 'Time / duration', type: 'text' },
+      { key: 'coverage', label: 'Topics covered / instructions', type: 'textarea' },
+      { key: 'file', label: 'Attach test paper or timetable (optional)', type: 'file' }
+    ]
+  },
+  scores: {
+    csv: true, sample: ['AAC/2026/101', 'JSS 1', 'Mathematics', '2026/2027', 'First Term', 'First CA', '15', '20'],
+    label: 'Scores (all)', one: 'score', icon: 'chart', roles: ['admin', 'teacher'], needs: ['students'],
+    title: (r, c) => `${(c.students.find(s => s.reg_no === r.regNo) || {}).name || r.regNo}: ${r.score}/${r.max}`,
+    sub: r => `${r.class} · ${r.subject} · ${r.assessment} · ${r.term} ${r.session}${r.teacherName ? ' · ' + r.teacherName : ''}`,
+    sort: (a, b) => String(b._created || '').localeCompare(String(a._created || '')),
+    fields: [
+      { key: 'regNo', label: 'Reg. number', type: 'text', required: true },
+      { key: 'class', label: 'Class', type: 'select', options: CLASSES, required: true },
+      { key: 'subject', label: 'Subject', type: 'text', required: true },
+      { key: 'session', label: 'Session', type: 'select', options: CONFIG.SESSIONS, required: true },
+      { key: 'term', label: 'Term', type: 'select', options: TERMS, required: true },
+      { key: 'assessment', label: 'Assessment', type: 'text', required: true, hint: 'First CA, Second CA, Exam, Assignment 1...' },
+      { key: 'score', label: 'Score', type: 'number', required: true },
+      { key: 'max', label: 'Out of', type: 'number', required: true }
     ]
   },
   fees: {
@@ -157,11 +220,12 @@ export const COLS = {
   },
   album: {
     label: 'School album', one: 'photo', icon: 'image', roles: ['admin'],
-    title: r => r.title, sub: r => `${r.category}${r.date ? ' · ' + fmtDate(r.date) : ''}`,
+    title: r => r.title, sub: r => `${r.category}${r.collection ? ' · ' + r.collection : ''}${r.date ? ' · ' + fmtDate(r.date) : ''}`,
     sort: (a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || '')),
     fields: [
       { key: 'title', label: 'Title', type: 'text', required: true },
       { key: 'category', label: 'Category', type: 'select', options: ['School life', 'Events', 'Sports and activities', 'Graduation', 'Classroom', 'Other'], required: true },
+      { key: 'collection', label: 'Collection (album name)', type: 'text', hint: 'Example: Sports Day 2026, Graduation 2025, Cultural Day. Photos with the same collection are grouped together.' },
       { key: 'image', label: 'Photo or flier (jpg, png) or PDF', type: 'image', accept: 'image/*,application/pdf', required: true },
       { key: 'caption', label: 'Caption (optional)', type: 'text' },
       { key: 'date', label: 'Date (optional)', type: 'date' },
@@ -175,6 +239,7 @@ export const COLS = {
     fields: [
       { key: 'title', label: 'Title', type: 'text', required: true },
       { key: 'category', label: 'Type', type: 'select', options: FILE_TYPES, required: true },
+      { key: 'collection', label: 'Collection / shelf (optional)', type: 'text', hint: 'Example: WAEC preparation, JSS 1 Mathematics, Story books' },
       { key: 'class', label: 'Class', type: 'select', options: ['All classes', ...CLASSES] },
       { key: 'session', label: 'Session', type: 'select', options: ['All sessions', ...CONFIG.SESSIONS] },
       { key: 'subject', label: 'Subject / curriculum area (optional)', type: 'text' },
@@ -214,7 +279,7 @@ export const COLS = {
     ]
   }
 };
-export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'fees', 'payments', 'feedback', 'applications', 'album', 'files', 'settings'];
+export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'fees', 'payments', 'feedback', 'applications', 'album', 'files', 'settings'];
 
 function feeScopeLabel(r, c) {
   if (r.scope === 'class') return r.targetClass;

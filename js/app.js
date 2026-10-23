@@ -13,17 +13,17 @@ const ROLES = {
   student: { label: 'Student', sub: 'Curriculum, notes and fees', idLabel: 'Reg. number', idHint: 'Example: AAC/2026/001', icon: 'cap', db: 'student' },
   parent: { label: 'Parent', sub: 'Fees, results and notices', idLabel: 'Phone number or email', idHint: 'The one you gave the school', icon: 'people', db: 'parent' },
   teacher: { label: 'Teacher', sub: 'Lesson notes and curriculum', idLabel: 'Staff ID or email', idHint: 'Given to you by the school', icon: 'user', db: 'teacher' },
-  payment: { label: 'Payment', sub: 'See and pay school fees', idLabel: 'Phone number or email', idHint: 'The parent account you registered', icon: 'card', db: 'parent' },
+  payment: { label: 'Payment', sub: 'Parents pay fees. Bursar and admin manage payments', idLabel: 'Phone number, staff ID or email', idHint: 'Parent, bursar or admin account', icon: 'card', db: ['parent', 'student', 'bursar', 'admin'] },
   bursar: { label: 'Bursar', sub: 'Fees, payments and receipts', idLabel: 'Staff ID or email', idHint: 'Given to you by the school', icon: 'wallet', db: 'bursar' },
   admin: { label: 'Admin', sub: 'Manage everything', idLabel: 'Email or staff ID', idHint: 'Given to you by the school', icon: 'shield', db: 'admin' }
 };
 const SOON = n => [n[0], n[1], null];
 const TILES = {
-  student: [['Curriculum', 'list', '#/p/curriculum'], ['Lesson notes', 'book', '#/p/notes'], ['Library and files', 'folder', '#/p/library'], ['Fees', 'wallet', '#/p/fees'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], SOON(['Assignments', 'task']), SOON(['Tests', 'form']), SOON(['CBT', 'monitor']), SOON(['Scorecard', 'chart'])],
-  parent: [['Fees and payments', 'card', '#/p/fees'], ['Check result', 'award', '#/result'], ['Curriculum', 'list', '#/p/curriculum'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], ['Feedback box', 'mail', '#/feedback']],
-  teacher: [['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], SOON(['Assignments', 'task']), SOON(['Tests', 'form']), SOON(['Enter scores', 'chart'])],
-  bursar: [['Fee overview', 'chart', '#/p/debtors'], ['Announcements', 'mega', '#/announcements']],
-  admin: [['Accounts and passwords', 'user', '#/accounts'], ['Upload results', 'award', '#/results-import'], ['Fee overview', 'chart', '#/p/debtors'], ['Announcements page', 'mega', '#/announcements'], ['School album page', 'image', '#/album']]
+  student: [['Curriculum', 'list', '#/p/curriculum'], ['Lesson notes', 'book', '#/p/notes'], ['Notebooks', 'book', '#/p/notebooks'], ['Assignments', 'task', '#/p/assignments'], ['Tests and exams', 'form', '#/p/tests'], ['Scorecard', 'chart', '#/p/scorecard'], ['Library and files', 'folder', '#/p/library'], ['Fees', 'wallet', '#/p/fees'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], SOON(['CBT', 'monitor'])],
+  parent: [['Fees and payments', 'card', '#/p/pay'], ['Scorecard', 'chart', '#/p/scorecard'], ['Check result', 'award', '#/result'], ['Assignments', 'task', '#/p/assignments'], ['Tests and exams', 'form', '#/p/tests'], ['Notebooks', 'book', '#/p/notebooks'], ['Curriculum', 'list', '#/p/curriculum'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], ['Feedback box', 'mail', '#/feedback']],
+  teacher: [['Enter scores for a class', 'chart', '#/p/scoresheet'], ['Notebooks (student view)', 'book', '#/p/notebooks'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album']],
+  bursar: [['Payment portal', 'card', '#/p/pay'], ['Fee overview', 'chart', '#/p/debtors'], ['Announcements', 'mega', '#/announcements']],
+  admin: [['Payment portal', 'card', '#/p/pay'], ['Accounts and passwords', 'user', '#/accounts'], ['Upload results', 'award', '#/results-import'], ['Enter scores for a class', 'chart', '#/p/scoresheet'], ['Fee overview', 'chart', '#/p/debtors'], ['Announcements page', 'mega', '#/announcements'], ['School album page', 'image', '#/album']]
 };
 
 /* ---------- site settings in the page shell ---------- */
@@ -104,8 +104,7 @@ function vLogin(role) {
         const res = await data.signIn(r.db, f.identifier.value, f.password.value);
         btn.disabled = false;
         if (!res.ok) { $('#loginErr').textContent = res.message; return; }
-        if (role === 'payment') { const s = res.session; s.role = 'parent'; }
-        location.hash = '#/dashboard';
+        location.hash = role === 'payment' ? '#/p/pay' : '#/dashboard';
       };
     } };
 }
@@ -264,6 +263,12 @@ async function render() {
       if (!s) v = need();
       else if (a === 'curriculum') v = await pt.vCurriculum(s);
       else if (a === 'notes') v = await pt.vNotes(s);
+      else if (a === 'notebooks') v = await pt.vNotebooks(s);
+      else if (a === 'assignments') v = await pt.vAssignments(s);
+      else if (a === 'tests') v = await pt.vTests(s);
+      else if (a === 'scorecard') v = await pt.vScorecard(s);
+      else if (a === 'scoresheet') v = ['admin', 'teacher'].includes(s.role) ? await pt.vScoreSheet(s) : null;
+      else if (a === 'pay') v = ['admin', 'bursar'].includes(s.role) ? await pt.vPayHub(s) : await pt.vFees(s);
       else if (a === 'library') v = await pt.vLibrary(s);
       else if (a === 'fees') v = await pt.vFees(s);
       else if (a === 'debtors') v = ['admin', 'bursar'].includes(s.role) ? await pt.vDebtors() : null;

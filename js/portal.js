@@ -1,7 +1,7 @@
 // Portal screens: announcements, prefects, album, feedback box, curriculum, lesson notes, library, fees, debtors, receipts, results upload.
 import * as data from './data.js';
 import { POSITIONS, FEE_CATEGORIES } from './schema.js';
-import { $, $$, esc, ic, opt, field, selectField, validate, toast, money, fmtDate, norm, CLASSES, CLASS_GROUPS, TERMS, download, toCsv, csvParse } from './ui.js';
+import { mdToHtml, $, $$, esc, ic, opt, field, selectField, validate, toast, money, fmtDate, norm, CLASSES, CLASS_GROUPS, TERMS, download, toCsv, csvParse } from './ui.js';
 
 const AUD_OF = { student: 'students', parent: 'parents', teacher: 'teachers' };
 export const myAud = s => (s ? AUD_OF[s.role] : null);
@@ -78,10 +78,11 @@ export async function vAlbum() {
   const cats = [...new Set(al.map(a => a.category))];
   return { title: 'School album', nav: 'more', html: `<p class="eyebrow">Gallery</p><h1 class="h1">School album</h1>
     ${cats.length > 1 ? `<div class="roles" id="albumCats"><a href="#/album" data-cat="" aria-current="page">All</a>${cats.map(c => `<a href="#/album" data-cat="${esc(c)}">${esc(c)}</a>`).join('')}</div>` : ''}
-    <div class="gallery" id="gallery">${al.map(p => !isImg(p.image) ? `<a class="gitem gdoc" data-cat="${esc(p.category)}" ${data.fileAttr(p.image)} target="_blank" rel="noopener">${ic('file')}<span>${esc(p.title)} (PDF)</span></a>` : `<button class="gitem" type="button" data-cat="${esc(p.category)}" data-i="${esc(p.id)}"><img ${data.fileAttr(p.image, 'src')} alt="${esc(p.caption || p.title)}" loading="lazy"><span>${esc(p.title)}</span></button>`).join('') || '<p class="hint">No photos yet.</p>'}</div>
+    <div id="gallery">${(() => { const groups = {}; al.forEach(p => { (groups[p.collection || 'General'] = groups[p.collection || 'General'] || []).push(p); });
+      return Object.entries(groups).map(([n, L]) => `<section class="gcoll"><h2 class="h2s">${ic('image')} ${esc(n)} <small class="hint">(${L.length})</small></h2><div class="gallery">${L.map(p => !isImg(p.image) ? `<a class="gitem gdoc" data-cat="${esc(p.category)}" ${data.fileAttr(p.image)} target="_blank" rel="noopener">${ic('file')}<span>${esc(p.title)} (PDF)</span></a>` : `<button class="gitem" type="button" data-cat="${esc(p.category)}" data-i="${esc(p.id)}"><img ${data.fileAttr(p.image, 'src')} alt="${esc(p.caption || p.title)}" loading="lazy"><span>${esc(p.title)}</span></button>`).join('')}</div></section>`).join('') || '<p class="hint">No photos yet.</p>'; })()}</div>
     <dialog id="lb" class="lb"><button class="lb-x" type="button" aria-label="Close">${ic('close')}</button><img id="lbImg" alt=""><p id="lbCap"></p></dialog>`,
     bind() {
-      $$('#albumCats a').forEach(a => a.onclick = e => { e.preventDefault(); $$('#albumCats a').forEach(x => x.removeAttribute('aria-current')); a.setAttribute('aria-current', 'page'); $$('.gitem').forEach(g => { g.hidden = a.dataset.cat && g.dataset.cat !== a.dataset.cat; }); });
+      $$('#albumCats a').forEach(a => a.onclick = e => { e.preventDefault(); $$('#albumCats a').forEach(x => x.removeAttribute('aria-current')); a.setAttribute('aria-current', 'page'); $$('.gitem').forEach(g => { g.hidden = a.dataset.cat && g.dataset.cat !== a.dataset.cat; }); $$('.gcoll').forEach(c => { c.hidden = ![...$$('.gitem', c)].some(g => !g.hidden); }); });
       const lb = $('#lb');
       $$('button.gitem').forEach(g => g.onclick = () => { const im = $('img', g); $('#lbImg').src = im.src; $('#lbImg').alt = im.alt; $('#lbCap').textContent = im.alt; lb.showModal(); });
       $('.lb-x').onclick = () => lb.close(); lb.onclick = e => { if (e.target === lb) lb.close(); };
@@ -151,15 +152,83 @@ export async function vCurriculum(s) {
     <div class="field" style="max-width:260px"><label for="cls">Class level</label>${classSelect('cls', start)}</div><div class="curlist" id="cl" style="margin-top:14px">${draw(start)}</div>`,
     bind() { $('#cls').onchange = e => { $('#cl').innerHTML = draw(e.target.value); data.hydrate($('#cl')); }; } };
 }
-export async function vNotes(s) {
-  const mine = await myStudents(s); const all = (await data.list('lessonNotes')).sort((a, b) => String(b._created).localeCompare(String(a._created))); const start = (mine[0] && mine[0].class) || 'JSS 1';
-  const draw = (cls, q) => { const r = all.filter(x => x.class === cls && (!q || (x.subject + x.title + x.body).toLowerCase().includes(q.toLowerCase())));
-    return r.length ? r.map(n => `<details class="card note"><summary><b>${esc(n.title)}</b><span>${esc(n.subject)}${n.week ? ' · ' + esc(n.week) : ''}</span></summary>
-      <div class="note-body">${esc(n.body)}</div>${fileLink(n.file)}<p class="hint">${esc(n.teacherName || '')} ${n._created ? '· ' + fmtDate(n._created) : ''}</p></details>`).join('') : '<p class="hint">No lesson notes found.</p>'; };
-  return { title: 'Lesson notes', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Class notes</p><h1 class="h1">Lesson notes</h1>
-    <div class="grid2"><div class="field"><label for="cls">Class level</label>${classSelect('cls', start)}</div><div class="field"><label for="nq">Search</label><input class="input" id="nq" type="search" placeholder="Subject or topic"></div></div>
-    <div id="nl" style="margin-top:14px">${draw(start, '')}</div>`,
-    bind() { const up = () => { $('#nl').innerHTML = draw($('#cls').value, $('#nq').value); data.hydrate($('#nl')); }; $('#cls').onchange = up; $('#nq').oninput = up; } };
+function notesView(kind, label, eyebrow) {
+  return async function (s) {
+    const mine = await myStudents(s); const all = (await data.list(kind)).sort((a, b) => String(a.subject).localeCompare(b.subject) || String(a.title).localeCompare(b.title));
+    const start = (mine[0] && mine[0].class) || (s && s.role === 'student' ? '' : 'JSS 1');
+    const draw = (cls, q, sub) => { const r = all.filter(x => x.class === cls && (!sub || x.subject === sub) && (!q || (x.subject + x.title + (x.body || '')).toLowerCase().includes(q.toLowerCase())));
+      return r.length ? r.map(n => `<details class="card note"><summary><b>${esc(n.title)}</b><span>${esc(n.subject)}${n.term ? ' · ' + esc(n.term) : ''}${n.week ? ' · ' + esc(n.week) : ''}</span></summary>
+        <div class="note-body nb">${mdToHtml(n.body)}</div>${n.file ? `<p><a class="btn btn-ghost btn-sm" ${data.fileAttr(n.file)} target="_blank" rel="noopener">${ic('download')} Open ${esc(n.file.name || 'file')}</a></p>` : ''}<p class="hint">${esc(n.teacherName || '')} ${n._created ? '· ' + fmtDate(n._created) : ''}</p>
+        ${s && ['admin', 'teacher'].includes(s.role) ? `<a class="link" href="#/manage/${kind}/${encodeURIComponent(n.id)}">Edit or replace</a>` : ''}</details>`).join('') : `<p class="hint">No ${label.toLowerCase()} found for this class yet.</p>`; };
+    return { title: label, nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">${eyebrow}</p><h1 class="h1">${label}</h1>
+      <div class="grid2"><div class="field"><label for="cls">Class level</label>${classSelect('cls', start)}</div><div class="field"><label for="nsub">Subject</label><select class="input" id="nsub"></select></div></div>
+      <div class="field"><label for="nq">Search</label><input class="input" id="nq" type="search" placeholder="Topic or word"></div>
+      <div id="nl" style="margin-top:14px"></div>`,
+      bind() {
+        const subs = () => { const cur = $('#nsub').value; $('#nsub').innerHTML = '<option value="">All subjects</option>' + [...new Set(all.filter(x => x.class === $('#cls').value).map(x => x.subject))].sort().map(x => opt(x, cur)).join(''); };
+        const up = () => { $('#nl').innerHTML = draw($('#cls').value, $('#nq').value, $('#nsub').value); data.hydrate($('#nl')); };
+        $('#cls').onchange = () => { subs(); up(); }; $('#nsub').onchange = up; $('#nq').oninput = up; subs(); up();
+      } };
+  };
+}
+export const vNotes = notesView('lessonNotes', 'Lesson notes', 'Class notes');
+export const vNotebooks = notesView('notebooks', 'Notebooks', 'Full explanations to learn from');
+
+/* ---------- assignments and tests (students, parents see their class) ---------- */
+export function vWork(kind) {
+  const L = kind === 'tests' ? ['Tests and exams', 'Upcoming and past tests'] : ['Assignments', 'Homework from your teachers'];
+  return async function (s) {
+    const mine = await myStudents(s); const classes = [...new Set(mine.map(x => x.class))]; const staff = s && ['admin', 'teacher'].includes(s.role);
+    const all = (await data.list(kind)).filter(x => staff || !classes.length || classes.includes(x.class)).sort((a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || '')));
+    return { title: L[0], nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">${L[1]}</p><h1 class="h1">${L[0]}</h1>
+      ${staff ? `<p><a class="btn btn-sm" href="#/manage/${kind}/new">${ic('plus')} Add</a> <a class="btn btn-ghost btn-sm" href="#/manage/${kind}">Manage</a></p>` : ''}
+      <div class="curlist" style="margin-top:14px">${all.map(a => `<article class="card cur"><div class="row-between"><h3>${esc(a.title)}</h3><span class="pill pill-blue">${esc(a.class)}</span></div>
+        <p class="hint" style="margin:4px 0">${esc([a.subject, a.kind, a.term, a.date ? fmtDate(a.date) : '', a.due ? 'Due ' + fmtDate(a.due) : '', a.time].filter(Boolean).join(' · '))}</p>
+        <p style="white-space:pre-wrap">${esc(a.instructions || a.coverage || '')}</p>${a.file ? `<a class="btn btn-ghost btn-sm" ${data.fileAttr(a.file)} target="_blank" rel="noopener">${ic('download')} Open ${esc(a.file.name || 'file')}</a>` : ''}
+        <p class="hint">${esc(a.teacherName || '')}</p></article>`).join('') || `<p class="hint">Nothing posted for your class yet.</p>`}</div>` };
+  };
+}
+export const vAssignments = vWork('assignments'); export const vTests = vWork('tests');
+
+/* ---------- scorecard (student / parent) ---------- */
+export async function vScorecard(s) {
+  const mine = await myStudents(s); const scores = await data.list('scores');
+  const blocks = mine.map(st => {
+    const rows = scores.filter(x => norm(x.regNo) === norm(st.reg_no)); const terms = [...new Set(rows.map(r => `${r.session}|${r.term}`))].sort().reverse();
+    return `<section class="card" style="margin-top:18px"><h2 style="font-size:20px">${esc(st.name)}</h2><span class="hint">${esc(st.reg_no)} · ${esc(st.class)}</span>
+      ${terms.map(t => { const [se, te] = t.split('|'); const R = rows.filter(r => r.session === se && r.term === te); const subs = [...new Set(R.map(r => r.subject))].sort();
+        return `<h3 class="fsec">${esc(te)} · ${esc(se)}</h3><div class="tbl-wrap"><table><thead><tr><th>Subject</th><th>Scores</th><th class="n">Total</th></tr></thead><tbody>${subs.map(su => { const Q = R.filter(r => r.subject === su); const tot = Q.reduce((a, r) => a + Number(r.score), 0), mx = Q.reduce((a, r) => a + Number(r.max), 0);
+          return `<tr><td>${esc(su)}</td><td>${Q.map(r => `${esc(r.assessment)}: ${r.score}/${r.max}`).join('<br>')}</td><td class="n"><b>${tot}/${mx}</b></td></tr>`; }).join('')}</tbody></table></div>`; }).join('') || '<p class="hint">No scores have been entered yet.</p>'}</section>`; }).join('');
+  return { title: 'Scorecard', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Progress</p><h1 class="h1">Scorecard</h1>
+    <p class="lead">Continuous assessment, test and assignment scores entered by teachers. Official end-of-term results are on the Check result page.</p>${blocks || '<p class="hint">No student is linked to this account yet.</p>'}` };
+}
+
+/* ---------- score sheet (teacher / admin): enter scores for a whole class ---------- */
+export async function vScoreSheet(s) {
+  const students = (await data.list('students')).sort((a, b) => String(a.name).localeCompare(b.name)); const cur = await data.list('curriculum');
+  const sessions = (await import('./config.js')).CONFIG.SESSIONS;
+  return { title: 'Enter scores', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Teachers</p><h1 class="h1">Enter scores for a class</h1>
+    <form class="card" id="ssf" style="margin-top:16px"><div class="grid2">
+      <div class="field"><label for="ssc">Class</label>${classSelect('ssc', '')}</div>
+      <div class="field"><label for="sss">Subject</label><input class="input" id="sss" list="subl" placeholder="Example: Mathematics"><datalist id="subl"></datalist></div>
+      <div class="field"><label for="ssse">Session</label><select class="input" id="ssse">${sessions.map(x => opt(x, '')).join('')}</select></div>
+      <div class="field"><label for="sst">Term</label><select class="input" id="sst">${TERMS.map(x => opt(x, '')).join('')}</select></div>
+      <div class="field"><label for="ssa">Assessment</label><input class="input" id="ssa" list="al" placeholder="First CA, Second CA, Exam, Assignment 1"><datalist id="al"><option>First CA</option><option>Second CA</option><option>Exam</option><option>Assignment</option><option>Test</option></datalist></div>
+      <div class="field"><label for="ssm">Out of</label><input class="input" id="ssm" type="number" min="1" value="20"></div></div>
+      <div id="ssrows" style="margin-top:12px"></div><div id="sserr" class="error" role="alert"></div>
+      <button class="btn" id="sssave" type="submit" style="margin-top:14px">Save scores</button></form>`,
+    bind() {
+      const draw = () => { const cls = $('#ssc').value; const L = students.filter(x => x.class === cls);
+        $('#subl').innerHTML = [...new Set(cur.filter(x => x.class === cls).map(x => x.subject))].map(x => `<option>${esc(x)}</option>`).join('');
+        $('#ssrows').innerHTML = L.length ? `<div class="tbl-wrap"><table><thead><tr><th>Student</th><th class="n">Score</th></tr></thead><tbody>${L.map(x => `<tr><td>${esc(x.name)}<br><small class="hint">${esc(x.reg_no)}</small></td><td class="n"><input class="input sc" data-reg="${esc(x.reg_no)}" type="number" min="0" step="any" inputmode="decimal" style="width:96px" aria-label="Score for ${esc(x.name)}"></td></tr>`).join('')}</tbody></table></div>` : '<p class="hint">No students in this class yet. Add or import students first.</p>'; };
+      $('#ssc').onchange = draw; draw();
+      $('#ssf').onsubmit = async e => { e.preventDefault(); const cls = $('#ssc').value, sub = $('#sss').value.trim(), as = $('#ssa').value.trim(), mx = Number($('#ssm').value); $('#sserr').textContent = '';
+        if (!sub || !as || !(mx > 0)) { $('#sserr').textContent = 'Enter the subject, assessment and the maximum score.'; return; }
+        const recs = [...$$('.sc')].filter(i => i.value !== '').map(i => ({ id: `sc-${norm(i.dataset.reg)}-${cls}-${sub}-${$('#ssse').value}-${$('#sst').value}-${as}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'), regNo: i.dataset.reg, class: cls, subject: sub, session: $('#ssse').value, term: $('#sst').value, assessment: as, score: Number(i.value), max: mx, teacherName: s.name, owner: s.id }));
+        const bad = recs.find(r => r.score > r.max); if (bad) { $('#sserr').textContent = `${bad.regNo}: score is above ${mx}.`; return; }
+        if (!recs.length) { $('#sserr').textContent = 'Type at least one score.'; return; }
+        try { await data.saveMany('scores', recs); toast(`${recs.length} scores saved`); } catch (err) { $('#sserr').textContent = err.message; } };
+    } };
 }
 
 /* ---------- library: textbooks, extracts, articles by class, session and subject ---------- */
@@ -174,7 +243,8 @@ export async function vLibrary(s) {
     <div class="row-between" style="justify-content:flex-start;gap:8px;margin-top:10px">${f.file ? `<a class="btn btn-ghost btn-sm" ${data.fileAttr(f.file)} target="_blank" rel="noopener">${ic('download')} Open ${esc(f.file.name || 'file')}</a>` : ''}${f.url ? `<a class="btn btn-ghost btn-sm" href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">${ic('file')} Open link</a>` : ''}</div></article>`;
   const draw = () => { const c = $('#lc').value, se = $('#ls').value, t = $('#lt').value, su = $('#lsub').value, q = $('#lq').value.toLowerCase();
     const r = files.filter(f => (!c || !f.class || f.class === 'All classes' || f.class === c) && (!se || !f.session || f.session === 'All sessions' || f.session === se) && (!t || f.category === t) && (!su || f.subject === su) && (!q || (f.title + ' ' + (f.description || '') + ' ' + (f.subject || '')).toLowerCase().includes(q)));
-    $('#ll').innerHTML = r.map(card).join('') || '<p class="hint">Nothing matches. Try clearing a filter.</p>'; data.hydrate($('#ll')); };
+    const gs = {}; r.forEach(f => { (gs[f.collection || 'General'] = gs[f.collection || 'General'] || []).push(f); });
+    $('#ll').innerHTML = Object.entries(gs).map(([n, L]) => `<h3 class="fsec" style="grid-column:1/-1">${ic('folder')} ${esc(n)}</h3>${L.map(card).join('')}`).join('') || '<p class="hint">Nothing matches. Try clearing a filter.</p>'; data.hydrate($('#ll')); };
   return { title: 'Library', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Resources</p><h1 class="h1">Library and files</h1>
     <p class="lead">Textbooks, extracts, articles and reference links, sorted by class, session and subject.</p>
     <div class="grid2" style="margin-top:14px"><div class="field"><label for="lc">Class</label><select class="input" id="lc"><option value="">All classes</option>${CLASSES.map(c => opt(c, start)).join('')}</select></div>
@@ -242,6 +312,22 @@ export async function vFees(s) {
       wire();
       $('#fsess').onchange = e => { $('#fbody').innerHTML = students.map(st => block(st, e.target.value)).join(''); wire(); };
     } };
+}
+
+/* ---------- payment hub for admin and bursar ---------- */
+export async function vPayHub(s) {
+  const [students, fees, payments] = await Promise.all([data.list('students'), data.list('fees'), data.list('payments')]);
+  let due = 0, paid = 0; students.forEach(st => data.feeLines(st, fees, payments).forEach(l => { due += Number(l.fee.amount); paid += l.paid; }));
+  const pend = [...new Map(payments.filter(p => p.status === 'Pending').map(p => [p.receipt, p])).values()];
+  const T = (h, i, t, d) => `<a class="tile" href="${h}">${ic(i)}<b>${t}</b><small>${d}</small></a>`;
+  return { title: 'Payment portal', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">${s.role === 'admin' ? 'Admin' : 'Bursar'} · payment portal</p><h1 class="h1">Payments</h1>
+    <div class="sum" style="margin-top:16px"><div><small>Total fees set</small><b>${money(due)}</b></div><div><small>Confirmed payments</small><b>${money(paid)}</b></div><div><small>Outstanding</small><b>${money(due - paid)}</b></div></div>
+    <div class="tiles" style="margin-top:20px">${T('#/manage/fees', 'card', 'Fees and prices', 'Set school fee, textbooks, uniforms by class and session')}${T('#/manage/payments', 'wallet', 'All payments', 'Record, edit, confirm, print receipts')}${T('#/p/debtors', 'chart', 'Fee overview', 'Who has paid and who owes')}${s.role === 'admin' ? T('#/manage/settings', 'sliders', 'Bank account details', 'Shown to parents on the Fees page') : ''}</div>
+    <h2 class="h2s" style="margin-top:28px">${ic('wallet')} Waiting for confirmation (${pend.length})</h2>
+    <ul class="mlist">${pend.map(p => { const st = students.find(x => x.reg_no === p.regNo) || {}; const tot = payments.filter(x => x.receipt === p.receipt).reduce((a, x) => a + Number(x.amount), 0);
+      return `<li class="mrow"><div class="mrow-main"><b>${esc(st.name || p.regNo)}: ${money(tot)}</b><span>${esc(p.receipt)} · ${fmtDate(p.date)} · ${esc(p.method)}${p.note ? ' · ' + esc(p.note) : ''}</span>${p.proof ? `<a class="link" ${data.fileAttr(p.proof)} target="_blank" rel="noopener">${ic('file')} Proof of payment</a>` : ''}</div>
+      <div class="mrow-actions"><button class="btn btn-sm" data-ok="${esc(p.receipt)}" type="button">Confirm</button><a class="btn btn-ghost btn-sm" href="#/receipt/${encodeURIComponent(p.receipt)}">Receipt</a></div></li>`; }).join('') || '<li class="hint">Nothing waiting.</li>'}</ul>`,
+    bind() { $$('[data-ok]').forEach(b => b.onclick = async () => { b.disabled = true; try { await data.saveMany('payments', payments.filter(x => x.receipt === b.dataset.ok && x.status === 'Pending').map(x => ({ ...x, status: 'Confirmed', enteredBy: s.name }))); toast('Confirmed'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); b.disabled = false; } }); } };
 }
 
 export async function vDebtors() {

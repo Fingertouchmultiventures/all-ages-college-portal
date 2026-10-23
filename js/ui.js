@@ -118,3 +118,19 @@ export function csvParse(text) {
   const head = rows[0].map(h => h.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_'));
   return rows.slice(1).map(r => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? '').trim()])));
 }
+
+/* tiny safe markup for notebooks: # h1, ## h2, ### h3, - bullet, 1. numbered, **bold**, blank line = new paragraph */
+export function mdToHtml(text) {
+  const inl = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  const out = []; let list = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const raw of String(text || '').split('\n')) {
+    const l = raw.trimEnd(); let m;
+    if (!l.trim()) { close(); continue; }
+    if ((m = l.match(/^(#{1,3})\s+(.*)$/))) { close(); out.push(`<h${m[1].length + 1} class="nb-h">${inl(m[2])}</h${m[1].length + 1}>`); }
+    else if ((m = l.match(/^\s*[-*]\s+(.*)$/))) { if (list !== 'ul') { close(); out.push('<ul>'); list = 'ul'; } out.push(`<li>${inl(m[1])}</li>`); }
+    else if ((m = l.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== 'ol') { close(); out.push('<ol>'); list = 'ol'; } out.push(`<li>${inl(m[1])}</li>`); }
+    else { close(); out.push(`<p>${inl(l)}</p>`); }
+  }
+  close(); return out.join('');
+}

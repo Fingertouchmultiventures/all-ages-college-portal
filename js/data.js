@@ -118,7 +118,13 @@ export async function remove(col, id) {
   const c = await sb(); const { error } = await c.from('records').delete().eq('id', id).eq('collection', col);
   if (error) throw new Error(error.message);
 }
-// For the public boxes (feedback, applications): anyone may add, nobody but admin may read back.
+export async function removeMany(col, ids) {
+  if (!ids.length) return 0;
+  if (!isLive) { const set = new Set(ids); store.set(KEY(col), store.get(KEY(col), []).filter(x => !set.has(x.id))); return ids.length; }
+  const c = await sb();
+  for (let i = 0; i < ids.length; i += 100) { const { error } = await c.from('records').delete().eq('collection', col).in('id', ids.slice(i, i + 100)); if (error) throw new Error(error.message); }
+  return ids.length;
+}
 // Save many records at once (bulk import). Returns how many were written.
 export async function saveMany(col, recs) {
   if (!recs.length) return 0;
@@ -196,16 +202,20 @@ export function loginEmail(role, identifier) {
 export async function signIn(role, identifier, password) {
   if (!isLive) {
     if (identifier.trim().toLowerCase() === DEMO_LOGIN.id && password === DEMO_LOGIN.pw) {
-      const s = { role, name: 'Demo ' + role[0].toUpperCase() + role.slice(1), id: 'demo', regs: ['AAC/DEMO/001'] };
+      const r0 = Array.isArray(role) ? role[0] : role; const s = { role: r0, name: 'Demo ' + r0[0].toUpperCase() + r0.slice(1), id: 'demo', regs: ['AAC/DEMO/001'] };
       store.set('aac.session', s); return { ok: true, session: s };
     }
     return { ok: false, message: 'Wrong details. In demo mode use "demo" and "demo1234".' };
   }
-  const c = await sb();
-  const { data, error } = await c.auth.signInWithPassword({ email: loginEmail(role, identifier), password });
-  if (error) return { ok: false, message: 'Wrong details. Check your ID and password and try again.' };
+  const c = await sb(); const allowed = Array.isArray(role) ? role : [role];
+  let data = null;
+  for (const r of allowed) {
+    const res = await c.auth.signInWithPassword({ email: loginEmail(r, identifier), password });
+    if (!res.error) { data = res.data; break; }
+  }
+  if (!data) return { ok: false, message: 'Wrong details. Check your ID and password and try again.' };
   const s = await profileSession(c, data.user);
-  if (!s || (s.dbRole !== role && s.dbRole !== 'admin')) { await c.auth.signOut(); return { ok: false, message: `This account is not registered as ${role}. Choose the right portal.` }; }
+  if (!s || (!allowed.includes(s.dbRole) && s.dbRole !== 'admin')) { await c.auth.signOut(); return { ok: false, message: `This account is not registered for this portal. Choose the right portal.` }; }
   return { ok: true, session: s };
 }
 async function profileSession(c, user) {
