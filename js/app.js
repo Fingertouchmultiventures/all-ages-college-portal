@@ -34,9 +34,19 @@ async function applySettings() {
   set('#brandMotto', e => { e.textContent = s.motto; }); set('#brandAddr', e => { e.textContent = s.address; });
   set('#brandPhones', e => { e.innerHTML = s.phones.map(p => `<a href="tel:${esc(p.tel)}">${esc(p.label)}</a>`).join(' &middot; '); });
   set('#footName', e => { e.textContent = s.schoolName; });
+  const root = document.documentElement.style;
+  const [wm, hero, logo] = await Promise.all([data.fileSrc(s.watermark), data.fileSrc(s.heroImage), data.fileSrc(s.logo)]);
+  wm ? root.setProperty('--wm', `url("${wm}")`) : root.removeProperty('--wm');
+  hero ? root.setProperty('--hero', `url("${hero}")`) : root.removeProperty('--hero');
+  const lg = $('#siteLogo'); if (lg) lg.src = logo || 'assets/logo.png';
   const first = $('#tabCall'); if (first && s.phones[0]) first.href = 'tel:' + s.phones[0].tel;
 }
 window.addEventListener('aac:settings', applySettings);
+async function refreshBell() {
+  const b = $('#bellBadge'); if (!b) return;
+  try { const n = (await data.getReplies()).filter(m => m.unread).length; b.textContent = n > 9 ? '9+' : String(n); b.hidden = !n; $('#bellBtn').setAttribute('aria-label', n ? `Notifications: ${n} new ${n === 1 ? 'reply' : 'replies'}` : 'Notifications: no new replies'); } catch { /* ignore */ }
+}
+window.addEventListener('aac:replies', refreshBell); window.addEventListener('hashchange', () => setTimeout(refreshBell, 300)); setInterval(refreshBell, 120000); setTimeout(refreshBell, 500);
 
 /* ---------- views ---------- */
 async function contactBlock() {
@@ -46,18 +56,27 @@ async function contactBlock() {
 }
 
 async function vHome() {
-  const s = await data.getSettings();
+  const [s, sPhones] = [await data.getSettings(), null];
   const portals = Object.entries(ROLES).map(([k, r]) => `<a class="portal" href="#/login/${k}"><span class="ico">${ic(r.icon)}</span><span><b>${r.label} portal</b><small>${r.sub}</small></span></a>`).join('');
-  return { title: 'Portals', nav: 'home', html: `${await pt.albumCarousel()}
-    <p class="eyebrow">Welcome</p><h1 class="h1">${esc(s.welcomeTitle)}</h1><p class="lead">Choose who you are to continue.</p>
-    <div class="portals">${portals}</div>
-    <div class="actions">
-      <a class="action action-red" href="#/apply">${ic('form')}<b>Apply for admission</b><span>Creche to SSS 3, 2026/2027 session</span></a>
-      <a class="action action-yellow" href="#/result">${ic('award')}<b>Check result</b><span>Use your PIN and reg. number</span></a>
-    </div>
-    <a class="action action-feedback" href="#/about" style="margin-bottom:0">${ic('cap')}<b>About the school</b><span>Classes, subjects, teachers, facilities and activities</span></a>
-    <a class="action action-feedback" href="#/feedback">${ic('mail')}<b>Enquiry, complaint or suggestion?</b><span>Open to everyone. Write to the school.</span></a>
-    ${await pt.prefectsStrip()}${await contactBlock()}`, bind() { pt.bindCarousel(view); } };
+  const quick = [['#/apply', 'form', 'Apply for admission'], ['#/result', 'award', 'Check result'], ['#/login/payment', 'card', 'Pay school fees'], ['#/login/student', 'cap', 'Student portal'], ['#/album', 'image', 'School album'], ['#/feedback', 'mail', 'Contact us']]
+    .map(([h, i, t]) => `<a class="qtile" href="${h}">${ic(i)}<span>${t}</span></a>`).join('');
+  const ann = await pt.annCarousel(null);
+  const lead = pt.leadershipCards(s);
+  return { title: 'Home', nav: 'home', wide: true, html: `
+    <section class="hero" aria-label="Welcome">
+      <div class="hero-text"><p class="eyebrow">Admissions open · 2026/2027</p><h1>${esc(s.welcomeTitle)}</h1><p>${esc(s.motto)}. Creche, Nursery, Primary, Junior and Senior Secondary in Apete, Ibadan.</p>
+        <div class="hero-cta"><a class="btn" href="#/apply">Apply for admission</a><a class="btn btn-ghost" href="#/login/student">Sign in to a portal</a></div></div>
+      <div class="hero-pic" role="img" aria-label="Students of the school"><div class="float f2"><small>Classes</small><b>Creche to SSS 3</b></div><div class="float f1"><small>Learning, character and self reliance</small><b>Wisdom and Knowledge</b></div></div>
+    </section>
+    <nav class="quick" aria-label="Quick actions">${quick}</nav>
+    ${ann ? `<section class="sect"><div class="sect-h"><h2>News and announcements</h2><a class="link" href="#/announcements">See all</a></div>${ann}</section>` : ''}
+    <section class="sect"><div class="sect-h"><h2>Choose your portal</h2></div><div class="portals">${portals}</div></section>
+    <section class="sect"><div class="sect-h"><h2>Life at ${esc(s.schoolName)}</h2><a class="link" href="#/album">Open the album</a></div>${await pt.albumCarousel()}
+      <div class="split" style="margin-top:16px"><a class="action action-feedback" href="#/about">${ic('cap')}<b>About the school</b><span>Classes, subjects, teachers, facilities, activities and organogram</span></a>
+      <a class="action action-feedback" href="#/feedback">${ic('mail')}<b>Enquiry, complaint or suggestion?</b><span>Open to everyone. Write to the school.</span></a></div></section>
+    ${lead ? `<section class="sect">${lead}</section>` : ''}
+    <section class="sect">${await pt.prefectsStrip()}${await contactBlock()}</section>`,
+    bind() { $$('.carousel', view).forEach(c => pt.bindCarousel(c.parentElement)); } };
 }
 
 function vLogin(role) {
@@ -256,6 +275,7 @@ async function render() {
     else if (route === 'announcements') v = await pt.vAnnouncements(s);
     else if (route === 'album') v = await pt.vAlbum();
     else if (route === 'feedback') v = pt.vFeedback();
+    else if (route === 'replies') v = await pt.vReplies();
     else if (route === 'more') v = pt.vMore(s, (await data.getSettings()).phones);
     else if (route === 'apply') v = vApply();
     else if (route === 'result') v = vResult();
@@ -263,6 +283,7 @@ async function render() {
   } catch (e) { console.error(e); v = { title: 'Error', nav: 'home', html: '<h1 class="h1">Something went wrong</h1><p class="lead">Please refresh the page. If it keeps happening, call the school office.</p>' }; }
   if (my !== token) return;
   if (!v) { if (location.hash.startsWith('#/login')) return; view.innerHTML = '<h1 class="h1">Not available</h1><p class="lead">You do not have access to this page.</p><p><a class="btn" href="#/dashboard">Back</a></p>'; return; }
+  document.body.classList.toggle('wide', !!v.wide); document.body.classList.remove('menu-open'); $('#menuBtn').setAttribute('aria-expanded', 'false');
   view.innerHTML = v.html; document.title = `${v.title} | ${(await data.getSettings()).schoolName}`;
   $$('[data-nav]').forEach(x => { if (x.dataset.nav === v.nav) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current'); });
   const acct = s ? ['#/dashboard', 'Dashboard'] : ['#/', 'Portals'];
@@ -292,4 +313,10 @@ installBtn.onclick = async () => {
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is optional */ });
 }
+$('#menuBtn').onclick = e => { const o = document.body.classList.toggle('menu-open'); e.currentTarget.setAttribute('aria-expanded', String(o)); };
+const closeDD = except => $$('.dd.open').forEach(d => { if (d !== except) { d.classList.remove('open'); $('.dd-btn', d).setAttribute('aria-expanded', 'false'); } });
+$$('.dd-btn').forEach(b => b.onclick = e => { e.stopPropagation(); const d = b.parentElement; closeDD(d); const o = d.classList.toggle('open'); b.setAttribute('aria-expanded', String(o)); });
+document.addEventListener('click', e => { if (!e.target.closest('.dd')) closeDD(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDD(); });
+$$('.dd-menu a, .topnav>a').forEach(a => a.addEventListener('click', () => { closeDD(); document.body.classList.remove('menu-open'); }));
 applySettings(); mountChat(); render();

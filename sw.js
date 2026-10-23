@@ -1,8 +1,8 @@
 // Offline shell for All Ages College. Bump VERSION whenever you change any file.
-const VERSION = 'aac-v3';
+const VERSION = 'aac-v4';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/styles.css',
-  'js/app.js', 'js/data.js', 'js/config.js', 'js/ui.js', 'js/schema.js', 'js/manage.js', 'js/portal.js', 'js/chat.js',
+  'js/app.js', 'js/data.js', 'js/config.js', 'js/ui.js', 'js/schema.js', 'js/manage.js', 'js/portal.js', 'js/chat.js', 'js/curriculum-data.js',
   'assets/logo.png', 'assets/students.jpg',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/favicon-48.png', 'icons/apple-touch-icon.png'
 ];

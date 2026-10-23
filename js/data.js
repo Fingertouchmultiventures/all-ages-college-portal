@@ -23,7 +23,7 @@ const DEFAULTS = {
   schoolName: 'All Ages College', motto: 'Education and self reliance: the best legacy',
   address: 'Zone 2, Papa Olorunsogo, Apete, Ibadan, Oyo State',
   phonesText: '0805 739 4188\n0810 277 6581\n0803 804 3666',
-  welcomeTitle: 'Sign in to your portal',
+  welcomeTitle: 'Learning, character and self reliance',
   aboutText: 'All Ages College is a government approved school in Apete, Ibadan, built on the belief that education and self reliance are the best legacy. We teach from Creche to SSS 3 in a caring, disciplined environment.',
   facilitiesText: 'Classrooms\nPlayground and sports field\nLibrary corner\nComputer studies\nSchool portal for parents and students',
   activitiesText: 'Sports and inter-house competitions\nCultural day\nCoaching and extra lessons\nSummer lessons\nEvents and parties',
@@ -119,6 +119,15 @@ export async function remove(col, id) {
   if (error) throw new Error(error.message);
 }
 // For the public boxes (feedback, applications): anyone may add, nobody but admin may read back.
+// Save many records at once (bulk import). Returns how many were written.
+export async function saveMany(col, recs) {
+  if (!recs.length) return 0;
+  if (!isLive) { for (const r of recs) await save(col, r); return recs.length; }
+  const c = await sb(); const now = new Date().toISOString();
+  const rows = recs.map(r => { const id = r.id || uid(); const { id: _i, _created, ...d } = r; return { id, collection: col, data: d, updated_at: now }; });
+  for (let i = 0; i < rows.length; i += 200) { const { error } = await c.from('records').upsert(rows.slice(i, i + 200)); if (error) throw new Error(error.message); }
+  return recs.length;
+}
 export async function submitPublic(col, rec) {
   const id = uid();
   if (!isLive) return save(col, { ...rec, id });
@@ -147,12 +156,12 @@ async function shrinkImage(file, max = 1600) {
     return blob && blob.size < file.size ? new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file;
   } catch { return file; }
 }
-export async function uploadFile(file) {
+export async function uploadFile(file, prefix = '') {
   const f = await shrinkImage(file); const limit = 15 * 1024 * 1024;
   if (f.size > limit) throw new Error('File is too big. Maximum is 15 MB.');
   const safe = f.name.replace(/[^A-Za-z0-9._-]+/g, '_');
   if (!isLive) { const fid = 'f_' + uid(); await idbPut(fid, f); return { fid, name: f.name, type: f.type, size: f.size }; }
-  const c = await sb(); const path = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safe}`;
+  const c = await sb(); const path = `${prefix ? prefix + '/' : ''}${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safe}`;
   const { error } = await c.storage.from('uploads').upload(path, f, { contentType: f.type || 'application/octet-stream' });
   if (error) throw new Error('Upload failed: ' + error.message);
   return { fid: path, path, name: f.name, type: f.type, size: f.size };
@@ -166,6 +175,11 @@ export function fileUrl(f) {
 export function fileAttr(f, attr = 'href') {
   const u = fileUrl(f);
   return `${attr}="${String(u).replace(/"/g, '&quot;')}" ${!u && f && f.fid ? `data-fid="${f.fid}" data-fattr="${attr}"` : ''}`;
+}
+// Resolve a stored file to a usable URL (works for demo-mode blobs too). Used for CSS backgrounds.
+export async function fileSrc(f) {
+  if (!f) return ''; const u = fileUrl(f); if (u) return u;
+  try { const b = f.fid && await idbGet(f.fid); return b ? URL.createObjectURL(b) : ''; } catch { return ''; }
 }
 export async function hydrate(root) {
   for (const el of root.querySelectorAll('[data-fid]')) {
@@ -215,11 +229,29 @@ export function feeApplies(fee, student) {
 }
 export function feeLines(student, fees, payments) {
   return fees.filter(f => feeApplies(f, student)).map(f => {
-    const paid = payments.filter(p => p.regNo === student.reg_no && p.feeId === f.id).reduce((a, p) => a + Number(p.amount || 0), 0);
+    const mine = payments.filter(p => p.regNo === student.reg_no && p.feeId === f.id);
+    const pending = mine.filter(p => p.status === 'Pending').reduce((a, p) => a + Number(p.amount || 0), 0);
+    const paid = mine.filter(p => !p.status || p.status === 'Confirmed').reduce((a, p) => a + Number(p.amount || 0), 0);
     const balance = Math.max(0, Number(f.amount) - paid);
-    return { fee: f, paid, balance, status: balance === 0 ? 'Paid' : paid > 0 ? 'Part paid' : 'Unpaid' };
+    return { fee: f, paid, pending, balance, status: balance === 0 ? 'Paid' : paid > 0 ? 'Part paid' : 'Unpaid' };
   });
 }
+
+/* ---------- feedback replies (bell) ---------- */
+export const trackedRefs = () => store.get('aac.myfb', []);
+export function trackRef(ref) { const r = String(ref || '').trim().toUpperCase(); if (!r) return; const a = trackedRefs(); if (!a.includes(r)) { a.push(r); store.set('aac.myfb', a); } }
+const seen = () => store.get('aac.fbseen', {});
+const fbKey = m => (m.respondedAt || '') + '|' + (m.status || '') + '|' + (m.adminNote || '').length;
+export async function getReplies() {
+  const refs = trackedRefs(); if (!refs.length) return [];
+  let rows = [];
+  if (!isLive) rows = (await list('feedback')).filter(r => refs.includes(String(r.ref).toUpperCase()));
+  else { const c = await sb(); const { data, error } = await c.rpc('check_feedback', { p_refs: refs }); if (!error && Array.isArray(data)) rows = data; }
+  const sn = seen();
+  return rows.map(r => ({ ref: r.ref, type: r.type, message: r.message, status: r.status || 'New', adminNote: r.adminNote || '', respondedAt: r.respondedAt || '', unread: Boolean((r.adminNote || (r.status && r.status !== 'New')) && sn[r.ref] !== fbKey(r)) }))
+    .sort((a, b) => Number(b.unread) - Number(a.unread));
+}
+export function markRepliesSeen(list) { const sn = seen(); list.forEach(m => { sn[m.ref] = fbKey(m); }); store.set('aac.fbseen', sn); }
 
 /* ---------- admissions ---------- */
 export async function submitApplication(form) {

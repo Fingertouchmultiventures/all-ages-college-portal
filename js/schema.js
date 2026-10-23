@@ -3,7 +3,9 @@
 import { CLASSES, TERMS, fmtDate, money } from './ui.js';
 import { CONFIG } from './config.js';
 
-export const POSITIONS = ['Head Boy', 'Head Girl', 'Assistant Head Boy', 'Assistant Head Girl', 'Senior Prefect', 'Prefect', 'Class Captain'];
+export const POSITIONS = ['Head Boy', 'Head Girl', 'Assistant Head Boy', 'Assistant Head Girl', 'Senior Prefect (Boy)', 'Senior Prefect (Girl)', 'Games Prefect', 'Sports Prefect', 'Library Prefect', 'Dining Hall Prefect', 'Health Prefect', 'Time Keeper', 'Welfare Prefect', 'Social Prefect', 'Disciplinary Prefect', 'Labour Prefect', 'Environment and Sanitation Prefect', 'Chapel / Mosque Prefect', 'Press Prefect', 'Assembly Prefect', 'Boarding / House Prefect', 'Class Prefect', 'Class Captain', 'Assistant Class Captain', 'Prefect'];
+export const ORG_LEVELS = [['1', 'Level 1: Proprietor / Board'], ['2', 'Level 2: Principal / Head of school'], ['3', 'Level 3: Vice principal / Heads of section'], ['4', 'Level 4: Teachers and staff'], ['5', 'Level 5: Support staff']];
+export const FILE_TYPES = ['Textbook', 'Extract', 'Article', 'Past questions', 'Reference link', 'Circular', 'Form', 'Result sheet', 'Other'];
 export const FEE_CATEGORIES = ['School fee', 'Textbooks and exercise books', 'Uniforms', 'Other'];
 const AUDIENCES = [['all', 'Everyone (public)'], ['students', 'Students only'], ['parents', 'Parents only'], ['teachers', 'Teachers only']];
 const FILE_AUD = [['all', 'Everyone signed in'], ['students', 'Students'], ['parents', 'Parents'], ['teachers', 'Teachers']];
@@ -19,10 +21,12 @@ export const COLS = {
       { key: 'audience', label: 'Who can see it', type: 'select', options: AUDIENCES, required: true, default: 'all' },
       { key: 'date', label: 'Date', type: 'date', required: true, default: 'today' },
       { key: 'pinned', label: 'Pin to the top', type: 'checkbox' },
-      { key: 'file', label: 'Attach a file (optional)', type: 'file' }
+      { key: 'image', label: 'Flier / advert picture (shows on home page)', type: 'image' },
+      { key: 'file', label: 'Attach a file (jpg, png, pdf...)', type: 'file' }
     ]
   },
   prefects: {
+    csv: true,
     label: 'Prefects', one: 'prefect', icon: 'star', roles: ['admin'],
     title: r => r.name, sub: r => `${r.position}${r.class ? ' · ' + r.class : ''}`,
     sort: (a, b) => POSITIONS.indexOf(a.position) - POSITIONS.indexOf(b.position),
@@ -34,18 +38,23 @@ export const COLS = {
     ]
   },
   staff: {
+    csv: true,
     label: 'Teachers and staff', one: 'staff member', icon: 'people', roles: ['admin'],
     title: r => r.name, sub: r => [r.role, r.subject].filter(Boolean).join(' · '),
     fields: [
       { key: 'name', label: 'Full name', type: 'text', required: true },
       { key: 'role', label: 'Role', type: 'text', required: true, hint: 'Founder, Proprietress, Head teacher, Teacher, Bursar...' },
       { key: 'subject', label: 'Subject or class (optional)', type: 'text' },
+      { key: 'orgLevel', label: 'Position on organogram', type: 'select', options: ORG_LEVELS, default: '4', hint: 'Used to draw the school organogram on the About page' },
+      { key: 'reportsTo', label: 'Reports to (name, optional)', type: 'text' },
       { key: 'bio', label: 'Short note (optional)', type: 'textarea' },
       { key: 'photo', label: 'Photo', type: 'image' }
     ]
   },
   students: {
+    csv: true,
     label: 'Students', one: 'student', icon: 'cap', roles: ['admin'],
+    sample: ['Ada Okafor', 'AAC/2026/101', 'JSS 1', 'Female', 'Mrs Okafor', '08012345678'],
     title: r => r.name, sub: r => `${r.reg_no} · ${r.class}`,
     sort: (a, b) => String(a.name).localeCompare(String(b.name)),
     idFrom: r => 'stu-' + String(r.reg_no).toUpperCase().replace(/[^A-Z0-9]/g, ''),
@@ -59,6 +68,7 @@ export const COLS = {
     ]
   },
   curriculum: {
+    csv: true,
     label: 'Curriculum', one: 'curriculum entry', icon: 'list', roles: ['admin', 'teacher'],
     title: r => `${r.class}: ${r.subject}`, sub: r => r.term,
     sort: (a, b) => CLASSES.indexOf(a.class) - CLASSES.indexOf(b.class) || String(a.subject).localeCompare(String(b.subject)),
@@ -84,6 +94,7 @@ export const COLS = {
     ]
   },
   fees: {
+    csv: true,
     label: 'Fees', one: 'fee item', icon: 'card', roles: ['admin', 'bursar'], needs: ['students'],
     title: r => r.title, sub: (r, c) => `${r.category} · ${money(r.amount)} · ${feeScopeLabel(r, c)}${r.term ? ' · ' + r.term : ''}`,
     sort: (a, b) => String(a.category).localeCompare(String(b.category)),
@@ -103,15 +114,17 @@ export const COLS = {
   payments: {
     label: 'Payments', one: 'payment', icon: 'wallet', roles: ['admin', 'bursar'], needs: ['students', 'fees', 'payments'],
     title: (r, c) => `${(c.students.find(s => s.reg_no === r.regNo) || {}).name || r.regNo}: ${money(r.amount)}`,
-    sub: (r, c) => `${(c.fees.find(f => f.id === r.feeId) || {}).title || 'Fee'} · ${fmtDate(r.date)} · ${r.method} · ${r.receipt}`,
+    sub: (r, c) => `${r.feeTitle || (c.fees.find(f => f.id === r.feeId) || {}).title || 'Fee'} · ${fmtDate(r.date)} · ${r.method} · ${r.receipt}${r.status && r.status !== 'Confirmed' ? ' · ' + r.status.toUpperCase() : ''}`,
     sort: (a, b) => String(b.date || '').localeCompare(String(a.date || '')),
-    extra: r => `<a class="btn btn-ghost btn-sm" href="#/receipt/${encodeURIComponent(r.id)}">Receipt</a>`,
+    extra: r => `${r.status === 'Pending' ? `<button class="btn btn-sm" type="button" data-confirm="${r.receipt}">Confirm</button>` : ''}<a class="btn btn-ghost btn-sm" href="#/receipt/${encodeURIComponent(r.receipt || r.id)}">Receipt</a>`,
     fields: [
       { key: 'regNo', label: 'Student', type: 'select', optionsFrom: 'students', required: true },
       { key: 'feeId', label: 'Fee being paid', type: 'select', dependsOn: 'regNo', required: true },
       { key: 'amount', label: 'Amount paid (₦)', type: 'number', required: true },
       { key: 'method', label: 'Method', type: 'select', options: ['Cash', 'Bank transfer', 'POS', 'Online'], required: true },
       { key: 'date', label: 'Date paid', type: 'date', required: true, default: 'today' },
+      { key: 'status', label: 'Status', type: 'select', options: ['Confirmed', 'Pending', 'Rejected'], default: 'Confirmed' },
+      { key: 'proof', label: 'Proof of payment (if sent by parent)', type: 'image', accept: 'image/*,application/pdf' },
       { key: 'note', label: 'Note (optional)', type: 'text' }
     ]
   },
@@ -149,7 +162,7 @@ export const COLS = {
     fields: [
       { key: 'title', label: 'Title', type: 'text', required: true },
       { key: 'category', label: 'Category', type: 'select', options: ['School life', 'Events', 'Sports and activities', 'Graduation', 'Classroom', 'Other'], required: true },
-      { key: 'image', label: 'Photo', type: 'image', required: true },
+      { key: 'image', label: 'Photo or flier (jpg, png) or PDF', type: 'image', accept: 'image/*,application/pdf', required: true },
       { key: 'caption', label: 'Caption (optional)', type: 'text' },
       { key: 'date', label: 'Date (optional)', type: 'date' },
       { key: 'featured', label: 'Show in the home page slideshow', type: 'checkbox' }
@@ -157,13 +170,17 @@ export const COLS = {
   },
   files: {
     label: 'Library and files', one: 'file', icon: 'folder', roles: ['admin', 'teacher'],
-    title: r => r.title, sub: r => `${r.category} · ${(FILE_AUD.find(a => a[0] === r.audience) || [])[1] || ''}`,
+    title: r => r.title, sub: r => `${r.category}${r.class ? ' · ' + r.class : ''}${r.session && r.session !== 'All sessions' ? ' · ' + r.session : ''}${r.subject ? ' · ' + r.subject : ''} · ${(FILE_AUD.find(a => a[0] === r.audience) || [])[1] || ''}`,
     sort: (a, b) => String(b._created || '').localeCompare(String(a._created || '')),
     fields: [
       { key: 'title', label: 'Title', type: 'text', required: true },
-      { key: 'category', label: 'Category', type: 'select', options: ['Library book', 'Result sheet', 'Circular', 'Form', 'Past questions', 'Other'], required: true },
+      { key: 'category', label: 'Type', type: 'select', options: FILE_TYPES, required: true },
+      { key: 'class', label: 'Class', type: 'select', options: ['All classes', ...CLASSES] },
+      { key: 'session', label: 'Session', type: 'select', options: ['All sessions', ...CONFIG.SESSIONS] },
+      { key: 'subject', label: 'Subject / curriculum area (optional)', type: 'text' },
+      { key: 'url', label: 'Link (optional, for online books and references)', type: 'text' },
       { key: 'audience', label: 'Who can open it', type: 'select', options: FILE_AUD, required: true, default: 'all' },
-      { key: 'file', label: 'File', type: 'file', required: true },
+      { key: 'file', label: 'File (pdf, jpg, png, doc...)', type: 'file' },
       { key: 'description', label: 'Description (optional)', type: 'textarea' }
     ]
   },
@@ -171,6 +188,16 @@ export const COLS = {
     label: 'Site settings', one: 'settings', icon: 'sliders', roles: ['admin'], single: 'site',
     title: () => 'Site settings', sub: () => '',
     fields: [
+      { key: 'logo', label: 'School logo', type: 'image' },
+      { key: 'heroImage', label: 'Home page main picture (hero / underlay)', type: 'image' },
+      { key: 'watermark', label: 'Watermark picture (faint background)', type: 'image' },
+      { key: 'orgChart', label: 'Organogram picture (optional, overrides the drawn chart)', type: 'image' },
+      { key: 'founderName', label: 'Founder / proprietor name', type: 'text' },
+      { key: 'founderPhoto', label: 'Founder / proprietor picture', type: 'image' },
+      { key: 'founderMsg', label: 'Founder message', type: 'textarea' },
+      { key: 'proprietressName', label: 'Principal / proprietress name', type: 'text' },
+      { key: 'proprietressPhoto', label: 'Principal / proprietress picture', type: 'image' },
+      { key: 'proprietressMsg', label: 'Principal message', type: 'textarea' },
       { key: 'schoolName', label: 'School name', type: 'text' },
       { key: 'motto', label: 'Motto', type: 'text' },
       { key: 'address', label: 'Address', type: 'text' },
