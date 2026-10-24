@@ -581,3 +581,176 @@ export async function vPractice(s) {
       $('#pc').onchange = subs; $('#ps').onchange = tops; $('#pt2').onchange = draw; subs();
     } };
 }
+
+/* ---------- student profile, bio-data and portfolio ---------- */
+export async function vProfile(s, regParam) {
+  const staff = s && ['admin', 'teacher'].includes(s.role);
+  let studs = staff ? (await data.list('students')).filter(x => !regParam || norm(x.reg_no) === norm(regParam)) : await myStudents(s);
+  if (staff && !regParam) {
+    return { title: 'Student profiles', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Students</p><h1 class="h1">Student profiles</h1>
+      <div class="field"><label for="pfq">Search by name or reg. number</label><input class="input" id="pfq" type="search"></div><ul class="mlist" id="pfl" style="margin-top:12px"></ul>`,
+      bind() { const draw = () => { const q = $('#pfq').value.toLowerCase(); $('#pfl').innerHTML = studs.filter(x => (x.name + x.reg_no).toLowerCase().includes(q)).slice(0, 60).map(x => `<li class="mrow"><div class="mrow-main"><b>${esc(x.name)}</b><span>${esc(x.reg_no)} · ${esc(x.class)}</span></div><a class="btn btn-ghost btn-sm" href="#/p/profile/${encodeURIComponent(x.reg_no)}">Open</a></li>`).join('') || '<li class="hint">No match.</li>'; }; $('#pfq').oninput = draw; draw(); } };
+  }
+  const [bios, items] = await Promise.all([data.list('bios'), data.list('portfolio')]);
+  const canEdit = s && s.role === 'student';
+  const blocks = studs.map(st => {
+    const bio = bios.find(b => norm(b.regNo) === norm(st.reg_no)) || {}; const mine = items.filter(i => norm(i.regNo) === norm(st.reg_no)).sort((a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || '')));
+    const row = (k, v) => v ? `<div><span>${k}</span><b>${esc(v)}</b></div>` : '';
+    return `<section class="card" style="margin-top:18px" data-reg="${esc(st.reg_no)}"><div class="profhead">${bio.photo ? `<img class="msg-img" ${data.fileAttr(bio.photo, 'src')} alt="${esc(st.name)}">` : `<span class="msg-img pf-ini">${esc(initials(st.name))}</span>`}<div><h2 style="font-size:22px">${esc(st.name)}</h2><span class="hint">${esc(st.reg_no)} · ${esc(st.class)}</span></div></div>
+      <h3 class="fsec">Bio-data</h3><div class="meta">${row('Gender', st.gender)}${row('Class', st.class)}${row('Parent or guardian', st.parentName)}${row('Parent phone', st.parentPhone)}${row('Parent ID', st.parentId)}${row('Date of birth', bio.dob ? fmtDate(bio.dob) : '')}${row('Home address', bio.address)}${row('Favourite subject', bio.favSubject)}${row('Hobbies', bio.hobbies)}${row('Ambition', bio.ambition)}</div>
+      ${bio.about ? `<p style="margin-top:12px">${esc(bio.about)}</p>` : ''}
+      ${canEdit ? `<details class="note" style="margin-top:14px"><summary><b>Edit my bio-data</b></summary><form class="bioform" data-reg="${esc(st.reg_no)}">
+        <div class="grid2"><div class="field"><label>Date of birth</label><input class="input" name="dob" type="date" value="${esc(bio.dob || '')}"></div><div class="field"><label>Favourite subject</label><input class="input" name="favSubject" value="${esc(bio.favSubject || '')}"></div>
+        <div class="field"><label>Hobbies</label><input class="input" name="hobbies" value="${esc(bio.hobbies || '')}"></div><div class="field"><label>Ambition (what I want to become)</label><input class="input" name="ambition" value="${esc(bio.ambition || '')}"></div></div>
+        <div class="field"><label>Home address</label><input class="input" name="address" value="${esc(bio.address || '')}"></div><div class="field"><label>About me</label><textarea class="input" name="about">${esc(bio.about || '')}</textarea></div>
+        <div class="field"><label>My picture (jpg, png)</label><input class="input" name="photo" type="file" accept="image/*"></div><div class="error berr" role="alert"></div><button class="btn" type="submit" style="margin-top:12px">Save my profile</button></form></details>` : ''}
+      <h3 class="fsec">Portfolio (my work, projects, awards and certificates)</h3>
+      <div class="curlist">${mine.map(i => `<article class="card cur"><div class="row-between"><h3>${esc(i.title)}</h3><span class="pill pill-blue">${esc(i.category || 'Work')}</span></div><p class="hint">${esc(i.date ? fmtDate(i.date) : '')}</p>${i.description ? `<p>${esc(i.description)}</p>` : ''}
+        ${i.file ? (isImg(i.file) ? `<img class="ann-img" ${data.fileAttr(i.file, 'src')} alt="${esc(i.title)}" loading="lazy">` : '') + `<a class="btn btn-ghost btn-sm" ${data.fileAttr(i.file)} target="_blank" rel="noopener">${ic('download')} Open ${esc(i.file.name || 'file')}</a>` : ''}
+        ${canEdit ? `<button class="btn btn-ghost btn-sm" data-delitem="${esc(i.id)}" type="button" aria-label="Delete ${esc(i.title)}">${ic('trash')}</button>` : ''}</article>`).join('') || '<p class="hint">Nothing in the portfolio yet.</p>'}</div>
+      ${canEdit ? `<details class="note" style="margin-top:14px"><summary><b>Add to my portfolio</b></summary><form class="itemform" data-reg="${esc(st.reg_no)}"><div class="field"><label>Title</label><input class="input" name="title" required></div>
+        <div class="field"><label>Type</label><select class="input" name="category">${['Project', 'Assignment', 'Award', 'Certificate', 'Artwork', 'Writing', 'Other'].map(x => `<option>${x}</option>`).join('')}</select></div>
+        <div class="field"><label>Description</label><textarea class="input" name="description"></textarea></div><div class="field"><label>File (picture, pdf, doc)</label><input class="input" name="file" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx"></div>
+        <div class="error ierr" role="alert"></div><button class="btn" type="submit" style="margin-top:12px">Add</button></form></details>` : ''}</section>`; }).join('');
+  return { title: 'My profile', nav: 'home', html: `<a class="back" href="#/${staff ? 'p/profile' : 'dashboard'}">${ic('back')} ${staff ? 'All students' : 'Dashboard'}</a><p class="eyebrow">Profile</p><h1 class="h1">${canEdit ? 'My profile and portfolio' : 'Profile and portfolio'}</h1>${blocks || '<div class="card" style="margin-top:18px"><p>No student is linked to this account yet. Please call the school office.</p></div>'}`,
+    bind() {
+      $$('.bioform').forEach(f => f.onsubmit = async e => { e.preventDefault(); const reg = f.dataset.reg; const old = bios.find(b => norm(b.regNo) === norm(reg)) || {}; const btn = f.querySelector('button'); btn.disabled = true;
+        try { const rec = { ...old, id: 'bio-' + norm(reg), regNo: reg }; ['dob', 'favSubject', 'hobbies', 'ambition', 'address', 'about'].forEach(k => { rec[k] = f.elements[k].value.trim(); });
+          if (f.elements.photo.files[0]) rec.photo = await data.uploadFile(f.elements.photo.files[0], 'portfolio'); await data.save('bios', rec); toast('Profile saved'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { f.querySelector('.berr').textContent = err.message; btn.disabled = false; } });
+      $$('.itemform').forEach(f => f.onsubmit = async e => { e.preventDefault(); const btn = f.querySelector('button'); btn.disabled = true;
+        try { const rec = { regNo: f.dataset.reg, title: f.elements.title.value.trim(), category: f.elements.category.value, description: f.elements.description.value.trim(), date: new Date().toISOString().slice(0, 10) };
+          if (f.elements.file.files[0]) rec.file = await data.uploadFile(f.elements.file.files[0], 'portfolio'); await data.save('portfolio', rec); toast('Added'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { f.querySelector('.ierr').textContent = err.message; btn.disabled = false; } });
+      $$('[data-delitem]').forEach(b => b.onclick = async () => { if (!confirm('Remove this from the portfolio?')) return; try { await data.remove('portfolio', b.dataset.delitem); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); } });
+    } };
+}
+
+/* ---------- community rooms (students, teachers, PTA, weekly corner) ---------- */
+const cr = s => s ? s.role : '';
+async function myClasses(s) { return [...new Set((await myStudents(s)).map(x => x.class))]; }
+export async function vCommunity(s) {
+  const role = cr(s); const classes = role === 'student' ? await myClasses(s) : role === 'admin' || role === 'teacher' ? CLASSES : [];
+  const rooms = (await data.list('rooms')); const members = await data.list('members');
+  const fixed = [];
+  if (['student', 'teacher', 'admin'].includes(role)) classes.forEach(c => fixed.push([`room-class-${c}`, `${c} class room`, 'Class discussion, assignments and projects']));
+  if (['teacher', 'admin'].includes(role)) fixed.push(['room-teachers', 'Teachers forum', 'Teachers and staff only']);
+  if (['parent', 'teacher', 'admin'].includes(role)) fixed.push(['room-pta', 'PTA forum', 'Parents, teachers and the PTA committee']);
+  const mine = new Set(members.filter(m => m.userId === s.id).map(m => m.room));
+  const visible = rooms.filter(r => ['admin', 'teacher'].includes(role) || (role === 'student' && (!r.class || classes.includes(r.class))) || mine.has(r.id));
+  const row = (id, name, d, extra = '') => `<li class="mrow"><span class="mthumb mthumb-ic">${ic('people')}</span><div class="mrow-main"><b>${esc(name)}</b><span>${esc(d)}</span></div><div class="mrow-actions">${extra}<a class="btn btn-ghost btn-sm" href="#/room/${encodeURIComponent(id)}">Open</a></div></li>`;
+  return { title: 'Community', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Community</p><h1 class="h1">Community rooms</h1>
+    <ul class="mlist" style="margin-top:16px">${fixed.map(f => row(...f)).join('') || '<li class="hint">No fixed rooms for this account.</li>'}</ul>
+    ${['student', 'teacher', 'admin'].includes(role) ? `<h2 class="h2s" style="margin-top:26px">${ic('star')} Groups: assignments and projects</h2>
+    <ul class="mlist">${visible.map(r => row(r.id, r.name, `${r.kind} · ${r.class || 'All classes'} · by ${r.ownerName || ''} · ${members.filter(m => m.room === r.id).length} member(s)`, mine.has(r.id) || ['admin'].includes(role) ? '' : `<button class="btn btn-sm" data-join="${esc(r.id)}" type="button">Join</button>`)).join('') || '<li class="hint">No groups yet. Create one below.</li>'}</ul>
+    <form class="card" id="rf" style="margin-top:16px"><h3 style="margin-bottom:6px">Create a group</h3><div class="field" style="margin-top:0"><label for="rn">Group name</label><input class="input" id="rn" required placeholder="Example: JSS 2 science project"></div>
+      <div class="grid2"><div class="field"><label for="rk">Purpose</label><select class="input" id="rk"><option>Class discussion</option><option>Assignment group</option><option>Project group</option></select></div><div class="field"><label for="rc">Class</label><select class="input" id="rc"><option value="">All classes</option>${(role === 'student' ? classes : CLASSES).map(c => opt(c, role === 'student' ? classes[0] : '')).join('')}</select></div></div>
+      <button class="btn" type="submit" style="margin-top:12px">Create group</button></form>` : ''}`,
+    bind() {
+      const f = $('#rf'); if (f) f.onsubmit = async e => { e.preventDefault(); const id = 'rm-' + Date.now().toString(36); try { await data.save('rooms', { id, name: $('#rn').value.trim(), kind: $('#rk').value, class: $('#rc').value, ownerId: s.id, ownerName: s.name }); await data.save('members', { id: `mem-${id}-${s.id}`, room: id, userId: s.id, name: s.name, role }); toast('Group created'); location.hash = '#/room/' + id; } catch (err) { toast(err.message); } };
+      $$('[data-join]').forEach(b => b.onclick = async () => { try { await data.save('members', { id: `mem-${b.dataset.join}-${s.id}`, room: b.dataset.join, userId: s.id, name: s.name, role }); toast('Joined'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { toast(err.message); } });
+    } };
+}
+export async function vRoom(id, s) {
+  const [posts, rooms, members, weekly] = await Promise.all([data.listBy('forum', 'room', id), data.list('rooms'), data.list('members'), id.startsWith('weekly-') ? data.list('weekly') : []]);
+  const meta = id === 'room-teachers' ? ['Teachers forum', 'Teachers and staff only'] : id === 'room-pta' ? ['PTA forum', 'Parents, teachers and PTA committee'] : id.startsWith('room-class-') ? [id.slice(11) + ' class room', 'Class discussion, assignments and projects'] : id.startsWith('weekly-') ? ['Weekly corner', 'Everyone contributes'] : [(rooms.find(r => r.id === id) || {}).name || 'Group', 'Group room'];
+  const wk = weekly.find(w => 'weekly-' + w.id === id); const isCustom = id.startsWith('rm-'); const joined = members.some(m => m.room === id && m.userId === s.id);
+  const tops = posts.filter(p => p.kind !== 'reply').sort((a, b) => String(b._created).localeCompare(String(a._created))); const reps = posts.filter(p => p.kind === 'reply');
+  const canDel = p => p.authorId === s.id || ['admin', 'teacher'].includes(s.role);
+  const msg = p => `<div class="post"><div class="row-between"><b>${esc(p.authorName || 'Member')} <small class="hint">${esc(p.role || '')}${p.class ? ' · ' + esc(p.class) : ''}</small></b><small class="hint">${fmtDate(p._created)}</small></div>${p.title ? `<h3 style="margin:4px 0">${esc(p.title)}</h3>` : ''}<p style="white-space:pre-wrap;margin:6px 0">${esc(p.body)}</p>
+    ${p.file ? (isImg(p.file) ? `<img class="ann-img" ${data.fileAttr(p.file, 'src')} alt="" loading="lazy">` : `<a class="link" ${data.fileAttr(p.file)} target="_blank" rel="noopener">${ic('file')} ${esc(p.file.name || 'File')}</a>`) : ''}${canDel(p) ? ` <button class="btn btn-ghost btn-sm" data-delp="${esc(p.id)}" type="button" aria-label="Delete">${ic('trash')}</button>` : ''}</div>`;
+  const back = id.startsWith('weekly-') ? '#/p/weekly' : id === 'room-pta' ? '#/p/pta' : '#/p/community';
+  const needJoin = isCustom && !joined && s.role !== 'admin' && s.role !== 'teacher';
+  return { title: meta[0], nav: 'home', html: `<a class="back" href="${back}">${ic('back')} Back</a><p class="eyebrow">${esc(meta[1])}</p><h1 class="h1">${esc(wk ? wk.title : meta[0])}</h1>
+    ${wk ? `<div class="card" style="margin-top:12px"><p class="eyebrow" style="margin:0 0 6px">${esc(wk.kind)}</p><p style="white-space:pre-wrap;margin:0">${esc(wk.body)}</p>${wk.file ? `<p><a class="link" ${data.fileAttr(wk.file)} target="_blank" rel="noopener">${ic('file')} ${esc(wk.file.name || 'File')}</a></p>` : ''}</div>` : ''}
+    ${needJoin ? `<div class="card" style="margin-top:16px"><p>Join this group to read and write.</p><button class="btn" id="joinb" type="button">Join group</button></div>` : `
+    <form class="card" id="pf" style="margin-top:16px"><div class="field" style="margin-top:0"><label for="pt3">${wk ? 'My contribution' : 'Message'}</label><textarea class="input" id="pt3" required placeholder="${wk ? 'Share your answer or idea' : 'Write your message'}"></textarea></div>
+      <div class="field"><label for="pfile">Attach a picture or file (optional)</label><input class="input" id="pfile" type="file" accept="image/*,.pdf,.doc,.docx,.ppt,.pptx"></div><div class="error" id="perr2" role="alert"></div><button class="btn" type="submit" style="margin-top:12px">Post</button></form>
+    <div class="posts" style="margin-top:18px">${tops.map(p => `<article class="card" style="margin-bottom:12px">${msg(p)}<div class="replies">${reps.filter(r => r.parent === p.id).sort((a, b) => String(a._created).localeCompare(String(b._created))).map(msg).join('')}</div>
+      <form class="repf" data-p="${esc(p.id)}"><input class="input" placeholder="Write a reply" required><button class="btn btn-ghost btn-sm" type="submit">Reply</button></form></article>`).join('') || '<p class="hint">No messages yet. Be the first to write.</p>'}</div>`}`,
+    bind() {
+      const j = $('#joinb'); if (j) j.onclick = async () => { await data.save('members', { id: `mem-${id}-${s.id}`, room: id, userId: s.id, name: s.name, role: s.role }); window.dispatchEvent(new HashChangeEvent('hashchange')); };
+      const base = { room: id, authorId: s.id, authorName: s.name, role: s.role, class: s.role === 'student' ? (posts.find(x => x.authorId === s.id) || {}).class || '' : '' };
+      const f = $('#pf'); if (f) f.onsubmit = async e => { e.preventDefault(); const btn = f.querySelector('button'); btn.disabled = true; try { const rec = { ...base, kind: 'post', body: $('#pt3').value.trim() }; const fl = $('#pfile').files[0]; if (fl) rec.file = await data.uploadFile(fl, 'community'); await data.save('forum', rec); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { $('#perr2').textContent = err.message; btn.disabled = false; } };
+      $$('.repf').forEach(rf => rf.onsubmit = async e => { e.preventDefault(); try { await data.save('forum', { ...base, kind: 'reply', parent: rf.dataset.p, body: rf.querySelector('input').value.trim() }); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { toast(err.message); } });
+      $$('[data-delp]').forEach(b => b.onclick = async () => { if (!confirm('Delete this message?')) return; try { await data.remove('forum', b.dataset.delp); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { toast(err.message); } });
+    } };
+}
+
+/* ---------- PTA: meetings, committee (parents and school organogram), forum ---------- */
+export async function vPTA(s) {
+  const [meets, mem] = await Promise.all([data.list('ptameetings'), data.list('ptamembers')]); const t = new Date().toISOString().slice(0, 10);
+  const up = meets.filter(m => (m.date || '') >= t).sort((a, b) => String(a.date).localeCompare(b.date)); const past = meets.filter(m => (m.date || '') < t).sort((a, b) => String(b.date).localeCompare(a.date));
+  const card = m => { const room = 'AllAgesPTA-' + String(m.id).replace(/[^A-Za-z0-9]/g, '').slice(-16); const virtual = /virtual|both/i.test(m.mode || ''); const link = m.link || (virtual ? `https://meet.jit.si/${room}` : '');
+    return `<article class="card cur"><div class="row-between"><h3>${esc(m.title)}</h3><span class="pill pill-blue">${esc(m.mode || 'Physical')}</span></div><p class="hint">${esc(fmtDate(m.date))} ${esc(m.time || '')}${m.venue ? ' · ' + esc(m.venue) : ''}</p>${m.agenda ? `<p style="white-space:pre-wrap">${esc(m.agenda)}</p>` : ''}
+      <div class="row-between" style="justify-content:flex-start;gap:8px">${link ? `<a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${ic('monitor')} Join online meeting</a>` : ''}${m.minutes ? `<a class="btn btn-ghost btn-sm" ${data.fileAttr(m.minutes)} target="_blank" rel="noopener">${ic('file')} Minutes</a>` : ''}</div></article>`; };
+  const people = mem.sort((a, b) => String(a.type).localeCompare(b.type));
+  const grp = (title, L) => L.length ? `<h3 class="fsec">${title}</h3><ul class="pf-row" style="flex-wrap:wrap">${L.map(p => `<li class="pf" style="flex:0 0 150px">${p.photo ? `<img class="pf-img" ${data.fileAttr(p.photo, 'src')} alt="${esc(p.name)}" loading="lazy">` : `<span class="pf-img pf-ini">${esc(initials(p.name))}</span>`}<b>${esc(p.name)}</b><span class="pf-pos">${esc(p.role)}</span></li>`).join('')}</ul>` : '';
+  return { title: 'PTA', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Parents and teachers</p><h1 class="h1">PTA</h1>
+    <p><a class="btn" href="#/room/room-pta">${ic('people')} Open the PTA forum</a> ${s.role === 'admin' ? `<a class="btn btn-ghost btn-sm" href="#/manage/ptameetings">Manage meetings</a> <a class="btn btn-ghost btn-sm" href="#/manage/ptamembers">Manage committee</a>` : ''}</p>
+    <h2 class="h2s" style="margin-top:20px">${ic('cal')} Upcoming meetings</h2><div class="curlist">${up.map(card).join('') || '<p class="hint">No meeting scheduled.</p>'}</div>
+    ${grp('PTA committee: parents', people.filter(p => p.type === 'Parent'))}${grp('School representatives (organogram)', people.filter(p => p.type !== 'Parent'))}
+    ${past.length ? `<h2 class="h2s" style="margin-top:24px">Past meetings and minutes</h2><div class="curlist">${past.slice(0, 8).map(card).join('')}</div>` : ''}` };
+}
+
+/* ---------- weekly engagement corner ---------- */
+export async function vWeekly(s) {
+  const mine = await myClasses(s); const all = (await data.list('weekly')).filter(w => ['admin', 'teacher'].includes(s.role) || !w.class || mine.includes(w.class)).sort((a, b) => String(b.date || b._created).localeCompare(String(a.date || a._created)));
+  const posts = await data.list('forum'); const n = id => posts.filter(p => p.room === 'weekly-' + id).length;
+  return { title: 'Weekly corner', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Everyone takes part</p><h1 class="h1">Weekly engagement corner</h1>
+    <p class="lead">A question or curriculum activity for the whole school each week. Students and teachers contribute their answers and ideas.</p>
+    ${['admin', 'teacher'].includes(s.role) ? `<p><a class="btn btn-sm" href="#/manage/weekly/new">${ic('plus')} Post this week's question or activity</a></p>` : ''}
+    <div class="curlist" style="margin-top:14px">${all.map((w, i) => `<article class="card cur"><div class="row-between"><h3>${esc(w.title)}</h3><span class="pill ${i ? '' : 'pill-ok'}">${i ? esc(fmtDate(w.date)) : 'This week'}</span></div><p class="eyebrow" style="margin:6px 0">${esc(w.kind)}${w.class ? ' · ' + esc(w.class) : ''}</p><p style="white-space:pre-wrap">${esc(w.body)}</p>
+      ${['student', 'teacher', 'admin'].includes(s.role) ? `<a class="btn btn-sm" href="#/room/weekly-${encodeURIComponent(w.id)}">${ic('people')} Contribute and read (${n(w.id)})</a>` : ''}</article>`).join('') || '<p class="hint">Nothing posted yet.</p>'}</div>` };
+}
+
+/* ---------- celebrations and honours (public) ---------- */
+const hcard = h => `<article class="card tcard">${h.photo ? `<img class="msg-img" ${data.fileAttr(h.photo, 'src')} alt="${esc(h.name)}" loading="lazy">` : `<span class="msg-img pf-ini">${esc(initials(h.name))}</span>`}<div><span class="pill">${esc(h.kind)}</span><h3 style="margin:6px 0 2px">${esc(h.name)}</h3><small class="hint">${esc([h.class, h.period].filter(Boolean).join(' · '))}</small>${h.message ? `<p style="margin:8px 0 0">${esc(h.message)}</p>` : ''}</div></article>`;
+export async function honoursStrip(n = 3) { const h = (await data.list('honours')).sort((a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || ''))).slice(0, n); return h.length ? `<div class="tgrid">${h.map(hcard).join('')}</div>` : ''; }
+export async function vCelebrations() {
+  const all = (await data.list('honours')).sort((a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || ''))); const kinds = [...new Set(all.map(h => h.kind))];
+  return { title: 'Celebrations', nav: 'about', html: `<p class="eyebrow">Celebrating our people</p><h1 class="h1">Celebrants and school honours</h1>
+    ${kinds.length > 1 ? `<div class="roles" id="hk"><a href="#/celebrations" data-k="" aria-current="page">All</a>${kinds.map(k => `<a href="#/celebrations" data-k="${esc(k)}">${esc(k)}</a>`).join('')}</div>` : ''}
+    <div class="tgrid" style="margin-top:16px">${all.map(h => `<div data-k="${esc(h.kind)}">${hcard(h)}</div>`).join('') || '<p class="hint">Nothing announced yet.</p>'}</div>`,
+    bind() { $$('#hk a').forEach(a => a.onclick = e => { e.preventDefault(); $$('#hk a').forEach(x => x.removeAttribute('aria-current')); a.setAttribute('aria-current', 'page'); $$('.tgrid [data-k]').forEach(d => { d.hidden = a.dataset.k && d.dataset.k !== a.dataset.k; }); }); } };
+}
+
+/* ---------- bell alerts ---------- */
+const daysTo = d => Math.round((new Date(d + 'T00:00:00') - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00')) / 864e5);
+export async function getAlerts(s) {
+  const out = []; if (!s) return out; const today = new Date().toISOString().slice(0, 10); const role = s.role;
+  const anns = (await announcementsFor(s)).filter(a => a.mandatory);
+  anns.forEach(a => out.push({ key: 'ann-' + a.id, level: 'must', icon: 'mega', text: `Mandatory notice: ${a.title}`, sub: String(a.body || '').slice(0, 140), href: '#/announcements' }));
+  if (['student', 'parent'].includes(role)) {
+    const [studs, fees, pays] = await Promise.all([myStudents(s), data.list('fees'), data.list('payments')]);
+    studs.forEach(st => {
+      data.feeLines(st, fees, pays).forEach(l => {
+        const due = l.fee.due; const first = (st.name || '').split(' ')[0];
+        if (l.balance > 0 && due) { const d = daysTo(due); if (d < 0) out.push({ key: `late-${l.fee.id}-${st.reg_no}-${today}`, level: 'late', icon: 'wallet', text: `Late payment: ${first}, ${l.fee.title}`, sub: `${money(l.balance)} was due ${fmtDate(due)} (${-d} day(s) ago)`, href: '#/p/pay' }); else if (d <= 7) out.push({ key: `due-${l.fee.id}-${st.reg_no}`, level: 'due', icon: 'wallet', text: `Payment due ${d === 0 ? 'today' : 'in ' + d + ' day(s)'}: ${first}, ${l.fee.title}`, sub: `${money(l.balance)} outstanding`, href: '#/p/pay' }); }
+        else if (l.balance > 0 && !l.paid && !l.pending) out.push({ key: `unpaid-${l.fee.id}-${st.reg_no}`, level: 'due', icon: 'wallet', text: `Unpaid: ${first}, ${l.fee.title}`, sub: `${money(l.balance)} outstanding`, href: '#/p/pay' });
+      });
+      pays.filter(p => norm(p.regNo) === norm(st.reg_no) && ['Pending', 'Rejected'].includes(p.status)).forEach(p => out.push({ key: `pay-${p.id}-${p.status}`, level: p.status === 'Rejected' ? 'late' : 'info', icon: 'card', text: p.status === 'Rejected' ? `Payment rejected: ${p.feeTitle || 'fee'} (${st.name})` : `Payment awaiting confirmation: ${p.feeTitle || 'fee'} (${st.name})`, sub: `Receipt ${p.receipt}`, href: '#/receipt/' + encodeURIComponent(p.receipt) }));
+    });
+    const classes = [...new Set(studs.map(x => x.class))];
+    const [lcs, asg, tst] = await Promise.all([data.list('liveclasses'), data.list('assignments'), data.list('tests')]);
+    lcs.filter(l => classes.includes(l.class) && l.date && daysTo(l.date) >= 0 && daysTo(l.date) <= 1).forEach(l => out.push({ key: 'live-' + l.id, level: 'due', icon: 'monitor', text: `Live class ${daysTo(l.date) === 0 ? 'today' : 'tomorrow'}: ${l.subject}, ${l.title}`, sub: l.time || '', href: '#/live/' + encodeURIComponent(l.id) }));
+    lcs.filter(l => classes.includes(l.class) && l.date === today).length || 0;
+    asg.filter(a => classes.includes(a.class) && a.due).forEach(a => { const d = daysTo(a.due); if (d < 0 && d >= -7) out.push({ key: `asgl-${a.id}-${today}`, level: 'late', icon: 'task', text: `Assignment past due date: ${a.subject}, ${a.title}`, sub: `Was due ${fmtDate(a.due)}`, href: '#/p/assignments' }); else if (d >= 0 && d <= 3) out.push({ key: 'asg-' + a.id, level: 'due', icon: 'task', text: `Assignment due ${d === 0 ? 'today' : 'in ' + d + ' day(s)'}: ${a.subject}, ${a.title}`, sub: '', href: '#/p/assignments' }); });
+    tst.filter(t => classes.includes(t.class) && t.date && daysTo(t.date) >= 0 && daysTo(t.date) <= 3).forEach(t => out.push({ key: 'test-' + t.id, level: 'due', icon: 'form', text: `${t.kind || 'Test'} ${daysTo(t.date) === 0 ? 'today' : 'in ' + daysTo(t.date) + ' day(s)'}: ${t.subject}, ${t.title}`, sub: t.time || '', href: '#/p/tests' }));
+  }
+  if (['admin', 'bursar'].includes(role)) { const pend = (await data.list('payments')).filter(p => p.status === 'Pending'); const n = new Set(pend.map(p => p.receipt)).size; if (n) out.push({ key: 'pend-' + n, level: 'due', icon: 'wallet', text: `${n} payment(s) waiting for your confirmation`, sub: '', href: '#/p/pay' }); }
+  if (role === 'admin') { const apps = (await data.list('applications')).filter(a => (a.status || 'New') === 'New'); if (apps.length) out.push({ key: 'apps-' + apps.length, level: 'info', icon: 'form', text: `${apps.length} new admission application(s)`, sub: '', href: '#/manage/applications' }); const tt = (await data.list('testimonials')).filter(t => !isPub(t)); if (tt.length) out.push({ key: 'tt-' + tt.length, level: 'info', icon: 'star', text: `${tt.length} testimonial(s) waiting for approval`, sub: '', href: '#/manage/testimonials' }); }
+  const order = { must: 0, late: 1, due: 2, info: 3 }; return out.sort((a, b) => order[a.level] - order[b.level]);
+}
+const aSeen = () => { try { return JSON.parse(localStorage.getItem('aac.alertseen') || '{}'); } catch { return {}; } };
+export async function unreadCount(s) { const sn = aSeen(); const a = (await getAlerts(s)).filter(x => !sn[x.key]).length; const r = (await data.getReplies()).filter(m => m.unread).length; return a + r; }
+export async function vAlerts(s) {
+  const alerts = await getAlerts(s); const replies = await data.getReplies(); const sn = aSeen();
+  const lvl = { must: ['Mandatory', 'pill-red'], late: ['Late', 'pill-red'], due: ['Due', ''], info: ['Info', 'pill-blue'] };
+  return { title: 'Alerts', nav: 'more', html: `<p class="eyebrow">Bell</p><h1 class="h1">Alerts and replies</h1>
+    ${s ? '' : '<p class="lead">Sign in to see payment, class and school instructions meant for you.</p>'}
+    <ul class="mlist" style="margin-top:16px">${alerts.map(a => `<li class="mrow ${sn[a.key] ? '' : 'reply-new'}"><span class="mthumb mthumb-ic">${ic(a.icon)}</span><div class="mrow-main"><b>${esc(a.text)}</b><span>${esc(a.sub)}</span></div><div class="mrow-actions"><span class="pill ${lvl[a.level][1]}">${lvl[a.level][0]}</span><a class="btn btn-ghost btn-sm" href="${a.href}">Open</a></div></li>`).join('') || (s ? '<li class="hint">You are up to date. Nothing needs your attention.</li>' : '')}</ul>
+    <h2 class="h2s" style="margin-top:26px">${ic('mail')} Replies to my messages</h2>
+    <div class="anns">${replies.map(m => `<article class="card reply ${m.unread ? 'reply-new' : ''}"><div class="row-between"><b>${esc(m.type)} · ${esc(m.ref)}</b><span class="pill ${m.status === 'Resolved' ? 'pill-ok' : ''}">${esc(m.status)}${m.unread ? ' · New reply' : ''}</span></div><p class="hint" style="margin:8px 0">Your message: ${esc(String(m.message || '').slice(0, 200))}</p>${m.adminNote ? `<div class="ok-box"><p class="eyebrow" style="color:var(--ok);margin-bottom:6px">Reply from the school</p><p style="margin:0">${esc(m.adminNote)}</p></div>` : '<p class="hint">No reply yet.</p>'}</article>`).join('') || '<p class="hint">No messages tracked on this device. <a class="link" href="#/feedback">Write to the school</a>.</p>'}</div>
+    <form class="card" id="refForm" style="margin-top:18px"><div class="field" style="margin-top:0"><label for="refIn">Have a reference number from another phone?</label><input class="input" id="refIn" placeholder="Example: FB-1A2B3C4D"></div><button class="btn btn-navy btn-sm" style="margin-top:12px" type="submit">Track it</button></form>`,
+    bind() { const n = aSeen(); alerts.forEach(a => { n[a.key] = 1; }); try { localStorage.setItem('aac.alertseen', JSON.stringify(n)); } catch { /* ignore */ } data.markRepliesSeen(replies); window.dispatchEvent(new Event('aac:replies'));
+      $('#refForm').onsubmit = e => { e.preventDefault(); data.trackRef($('#refIn').value); window.dispatchEvent(new HashChangeEvent('hashchange')); }; } };
+}

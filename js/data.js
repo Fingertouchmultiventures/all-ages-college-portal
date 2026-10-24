@@ -100,6 +100,14 @@ export async function list(col) {
   if (error) { console.warn('list', col, error.message); return []; }
   return data.map(r => ({ ...r.data, id: r.id, _created: r.created_at }));
 }
+// Records of one collection that share a data field (e.g. forum posts of one room).
+export async function listBy(col, key, value) {
+  if (!isLive) return (await list(col)).filter(r => r[key] === value);
+  const c = await sb();
+  const { data, error } = await c.from('records').select('id,data,created_at').eq('collection', col).filter(`data->>${key}`, 'eq', value).order('created_at', { ascending: true }).limit(1000);
+  if (error) { console.warn('listBy', col, error.message); return []; }
+  return data.map(r => ({ ...r.data, id: r.id, _created: r.created_at }));
+}
 export async function save(col, rec) {
   const id = rec.id || uid(); const { id: _i, _created, ...data } = rec;
   if (!isLive) {

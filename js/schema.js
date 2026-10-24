@@ -7,6 +7,7 @@ export const POSITIONS = ['Head Boy', 'Head Girl', 'Assistant Head Boy', 'Assist
 export const ORG_LEVELS = [['1', 'Level 1: Proprietor / Board'], ['2', 'Level 2: Principal / Head of school'], ['3', 'Level 3: Vice principal / Heads of section'], ['4', 'Level 4: Teachers and staff'], ['5', 'Level 5: Support staff']];
 export const FILE_TYPES = ['Textbook', 'Extract', 'Article', 'Past questions', 'Reference link', 'Circular', 'Form', 'Result sheet', 'Other'];
 export const ACTIVITIES = ['Community service', 'Sports', 'Phonics and oral class', 'School fellowship', 'Music', 'Excursion'];
+export const HONOURS = ['Birthday celebrant', 'Face of the school', 'Student of the week', 'Student of the term', 'Student of the session', 'Student of the year', 'Teacher of the term', 'Best class of the term', 'Other honour'];
 export const FEE_CATEGORIES = ['School fee', 'Textbooks and exercise books', 'Uniforms', 'Other'];
 const AUDIENCES = [['all', 'Everyone (public)'], ['students', 'Students only'], ['parents', 'Parents only'], ['teachers', 'Teachers only']];
 const FILE_AUD = [['all', 'Everyone signed in'], ['students', 'Students'], ['parents', 'Parents'], ['teachers', 'Teachers']];
@@ -22,6 +23,7 @@ export const COLS = {
       { key: 'audience', label: 'Who can see it', type: 'select', options: AUDIENCES, required: true, default: 'all' },
       { key: 'date', label: 'Date', type: 'date', required: true, default: 'today' },
       { key: 'pinned', label: 'Pin to the top', type: 'checkbox' },
+      { key: 'mandatory', label: 'Mandatory instruction (alerts everyone on the bell)', type: 'checkbox' },
       { key: 'image', label: 'Flier / advert picture (shows on home page)', type: 'image' },
       { key: 'file', label: 'Attach a file (jpg, png, pdf...)', type: 'file' }
     ]
@@ -282,6 +284,67 @@ export const COLS = {
       { key: 'source', label: 'Source', type: 'select', options: ['Practice', 'WAEC-style', 'NECO-style', 'BECE-style', 'Common Entrance style', 'Teacher set'], default: 'Practice' }
     ]
   },
+  honours: {
+    label: 'Celebrations and honours', one: 'honour', icon: 'award', roles: ['admin'],
+    title: r => `${r.name}: ${r.kind}`, sub: r => `${r.period || ''}${r.class ? ' · ' + r.class : ''}`,
+    sort: (a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || '')),
+    fields: [
+      { key: 'kind', label: 'Honour', type: 'select', options: HONOURS, required: true },
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      { key: 'class', label: 'Class (optional)', type: 'text' },
+      { key: 'period', label: 'Week, term or session', type: 'text', hint: 'Example: Week 4, First Term 2026/2027, 2026/2027 session' },
+      { key: 'date', label: 'Date', type: 'date', default: 'today' },
+      { key: 'message', label: 'Citation / message', type: 'textarea' },
+      { key: 'photo', label: 'Photo', type: 'image' }
+    ]
+  },
+  weekly: {
+    label: 'Weekly engagement corner', one: 'weekly challenge', icon: 'mega', roles: ['admin', 'teacher'],
+    title: r => r.title, sub: r => `${r.kind} · ${r.date ? fmtDate(r.date) : ''}${r.class ? ' · ' + r.class : ''}`,
+    sort: (a, b) => String(b.date || b._created || '').localeCompare(String(a.date || a._created || '')),
+    fields: [
+      { key: 'kind', label: 'Kind', type: 'select', options: ['Question of the week', 'Curriculum activity of the week', 'Challenge', 'Project idea'], required: true },
+      { key: 'title', label: 'Title', type: 'text', required: true },
+      { key: 'body', label: 'The question or activity', type: 'textarea', required: true },
+      { key: 'class', label: 'For which class (empty = everyone)', type: 'select', options: CLASSES },
+      { key: 'date', label: 'Week starting', type: 'date', default: 'today' },
+      { key: 'file', label: 'Attach a picture or file (optional)', type: 'file' }
+    ]
+  },
+  ptameetings: {
+    label: 'PTA meetings', one: 'PTA meeting', icon: 'people', roles: ['admin'],
+    title: r => r.title, sub: r => `${r.date ? fmtDate(r.date) : ''} ${r.time || ''} · ${r.mode || 'Physical'}`,
+    sort: (a, b) => String(b.date || '').localeCompare(String(a.date || '')),
+    fields: [
+      { key: 'title', label: 'Meeting title', type: 'text', required: true },
+      { key: 'date', label: 'Date', type: 'date', required: true, default: 'today' },
+      { key: 'time', label: 'Time', type: 'text' },
+      { key: 'mode', label: 'Meeting type', type: 'select', options: ['Physical', 'Virtual (online)', 'Both'], default: 'Physical' },
+      { key: 'venue', label: 'Venue (physical)', type: 'text' },
+      { key: 'link', label: 'Online meeting link (virtual)', type: 'text', hint: 'Paste a Google Meet or Zoom link. Leave empty to use the built-in room.' },
+      { key: 'agenda', label: 'Agenda', type: 'textarea' },
+      { key: 'minutes', label: 'Minutes or documents (optional)', type: 'file' }
+    ]
+  },
+  ptamembers: {
+    csv: true, sample: ['Mrs Ade', 'Chairperson', 'Parent', '08031112222'],
+    label: 'PTA committee and members', one: 'PTA member', icon: 'people', roles: ['admin'],
+    title: r => r.name, sub: r => `${r.role} · ${r.type}`,
+    sort: (a, b) => String(a.type).localeCompare(String(b.type)) || String(a.name).localeCompare(String(b.name)),
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      { key: 'role', label: 'PTA role', type: 'text', required: true, hint: 'Chairperson, Secretary, Treasurer, Member, School representative...' },
+      { key: 'type', label: 'Parent or school staff', type: 'select', options: ['Parent', 'School staff (organogram)'], required: true, default: 'Parent' },
+      { key: 'phone', label: 'Phone (optional)', type: 'text' },
+      { key: 'photo', label: 'Photo', type: 'image' }
+    ]
+  },
+  forum: {
+    label: 'Community posts (moderate)', one: 'post', icon: 'mail', roles: ['admin'], noCreate: true,
+    title: r => `${r.authorName || ''}: ${String(r.title || r.body || '').slice(0, 60)}`, sub: r => `${r.room} · ${r.role || ''} · ${fmtDate(r._created)}`,
+    sort: (a, b) => String(b._created || '').localeCompare(String(a._created || '')),
+    fields: [{ key: 'room', label: 'Room', type: 'text', readonly: true }, { key: 'authorName', label: 'Author', type: 'text', readonly: true }, { key: 'body', label: 'Message', type: 'textarea' }]
+  },
   album: {
     label: 'School album', one: 'photo', icon: 'image', roles: ['admin'],
     title: r => r.title, sub: r => `${r.category}${r.collection ? ' · ' + r.collection : ''}${r.date ? ' · ' + fmtDate(r.date) : ''}`,
@@ -343,7 +406,7 @@ export const COLS = {
     ]
   }
 };
-export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'liveclasses', 'questions', 'fees', 'payments', 'feedback', 'applications', 'album', 'testimonials', 'activities', 'files', 'settings'];
+export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'liveclasses', 'questions', 'fees', 'payments', 'feedback', 'applications', 'album', 'testimonials', 'honours', 'weekly', 'ptameetings', 'ptamembers', 'forum', 'activities', 'files', 'settings'];
 
 function feeScopeLabel(r, c) {
   if (r.scope === 'class') return r.targetClass;
