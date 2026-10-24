@@ -2,6 +2,7 @@
 import * as data from './data.js';
 import { buildCurriculum, lessonDraft } from './curriculum-data.js';
 import { SAMPLE_NOTEBOOKS } from './notebooks-data.js';
+import { SAMPLE_QUESTIONS } from './questions-data.js';
 import { COLS, ADMIN_ORDER } from './schema.js';
 import { CLASSES, TERMS } from './ui.js';
 import { $, esc, ic, opt, validate, toast, money, today, norm, toCsv, csvParse, download } from './ui.js';
@@ -54,7 +55,7 @@ async function vList(col, c, s, ctx) {
     <div class="row-between" style="margin-top:6px"><div><p class="eyebrow">Manage</p><h1 class="h1">${c.label}</h1></div>
       ${c.noCreate ? '' : `<a class="btn" href="#/manage/${col}/new">${ic('plus')} Add ${c.one}</a>`}</div>
     <div class="row-between" style="margin:18px 0 10px"><div class="searchbox">${ic('search')}<input id="msearch" class="input" type="search" placeholder="Search ${c.label.toLowerCase()}" aria-label="Search"></div>
-      <div class="toolbar">${hasFile ? `<button class="btn btn-sm" id="mbulk" type="button">${ic('plus')} Bulk upload files</button>` : ''}${col === 'curriculum' && s.role === 'admin' ? `<button class="btn btn-sm" id="mstd" type="button">${ic('list')} Load Nigerian curriculum (Creche to SSS 3)</button>` : ''}${col === 'notebooks' ? `<button class="btn btn-sm" id="mnb" type="button">${ic('book')} Load sample notebooks</button>` : ''}${col === 'lessonNotes' ? `<button class="btn btn-sm" id="mdraft" type="button">${ic('book')} Draft notes from curriculum</button>` : ''}${c.csv ? `<button class="btn btn-sm" id="mcsv" type="button">${ic('plus')} Import CSV</button>` : ''}
+      <div class="toolbar">${hasFile ? `<button class="btn btn-sm" id="mbulk" type="button">${ic('plus')} Bulk upload files</button>` : ''}${col === 'curriculum' && s.role === 'admin' ? `<button class="btn btn-sm" id="mstd" type="button">${ic('list')} Load Nigerian curriculum (Creche to SSS 3)</button>` : ''}${col === 'students' ? `<button class="btn btn-sm" id="mlogins" type="button">${ic('user')} Create logins for students and parents</button>` : ''}${col === 'applications' ? `<button class="btn btn-sm" id="madmitall" type="button">${ic('cap')} Admit selected (or all new)</button>` : ''}${col === 'questions' ? `<button class="btn btn-sm" id="mq" type="button">${ic('form')} Load sample questions</button>` : ''}${col === 'notebooks' ? `<button class="btn btn-sm" id="mnb" type="button">${ic('book')} Load sample notebooks</button>` : ''}${col === 'lessonNotes' ? `<button class="btn btn-sm" id="mdraft" type="button">${ic('book')} Draft notes from curriculum</button>` : ''}${c.csv ? `<button class="btn btn-sm" id="mcsv" type="button">${ic('plus')} Import CSV</button>` : ''}
       ${rows.length ? `<label class="check mini" style="margin:0"><input type="checkbox" id="msall"> Select all shown</label><button class="btn btn-ghost btn-sm" id="mdelsel" type="button" hidden>${ic('trash')} Delete selected (<span id="mselN">0</span>)</button>` : ''}
       <button class="btn btn-ghost btn-sm" id="mexport" type="button">${ic('download')} Export CSV</button></div></div>
     <div id="mpanel"></div>
@@ -83,6 +84,15 @@ async function vList(col, c, s, ctx) {
         $('#mstd').disabled = true; $('#mstd').textContent = 'Loading…';
         try { const n = await data.saveMany('curriculum', buildCurriculum()); toast(`${n} curriculum entries loaded`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); $('#mstd').disabled = false; }
       };
+      if ($('#mlogins')) $('#mlogins').onclick = () => loginsPanel();
+      const admit = async apps => {
+        if (!apps.length) return toast('No applications to admit');
+        if (!confirm(`Admit ${apps.length} applicant(s)? Each gets the next student ID and a parent ID (siblings share one parent ID), and appears in Students.`)) return;
+        try { const st = await data.admitApplications(apps, s.name); download('admitted-ids.csv', toCsv([['Name', 'Class', 'Student ID', 'Parent ID', 'Parent phone'], ...st.map(r => [r.name, r.class, r.reg_no, r.parentId, r.parentPhone || ''])])); toast(`${st.length} admitted`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); }
+      };
+      document.querySelectorAll('[data-admit]').forEach(b => b.onclick = () => admit(rows.filter(r => r.id === b.dataset.admit)));
+      if ($('#madmitall')) $('#madmitall').onclick = () => { const ids = sels().map(x => x.dataset.id); admit(rows.filter(r => ids.length ? ids.includes(r.id) : (r.status || 'New') !== 'Admitted' && r.status !== 'Declined').filter(r => r.status !== 'Admitted')); };
+      if ($('#mq')) $('#mq').onclick = async () => { try { const n = await data.saveMany('questions', SAMPLE_QUESTIONS); toast(`${n} sample questions loaded`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); } };
       if ($('#mnb')) $('#mnb').onclick = async () => { try { const n = await data.saveMany('notebooks', SAMPLE_NOTEBOOKS.map(x => ({ ...x, owner: s.id }))); toast(`${n} sample notebooks loaded`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); } };
       if ($('#mdraft')) $('#mdraft').onclick = () => draftPanel(s);
       if ($('#mbulk')) $('#mbulk').onclick = () => bulkPanel(col, c, s, ctx);
@@ -171,10 +181,12 @@ async function vForm(col, c, id, s, ctx) {
             else out[f.key] = form.elements[f.key].value.trim();
           }
           if (col === 'feedback') out.respondedAt = new Date().toISOString();
+          if (col === 'applications' && !out.ref) out.ref = data.newRef('AAC');
+          if (col === 'students') { const ex = (await data.list('students')).filter(x => x.id !== rec.id); data.assignIds([out], ex); }
           if (c.single) out.id = c.single;
-          if (c.idFrom) out.id = c.idFrom(out);
+          if (c.idFrom && col !== 'students') out.id = c.idFrom(out);
           if (col === 'students') out.reg_norm = norm(out.reg_no);
-          if (isNew && ['lessonNotes', 'notebooks', 'assignments', 'tests'].includes(col)) { out.owner = s.id; out.teacherName = s.name; }
+          if (isNew && ['lessonNotes', 'notebooks', 'assignments', 'tests', 'liveclasses', 'questions'].includes(col)) { out.owner = s.id; out.teacherName = s.name; }
           if (isNew && col === 'payments') { out.receipt = 'RCT-' + Date.now().toString(36).toUpperCase().slice(-6); out.enteredBy = s.name; }
           await data.save(col, out);
           if (col === 'settings') { await data.getSettings(true); window.dispatchEvent(new Event('aac:settings')); }
@@ -251,7 +263,7 @@ function csvPanel(col, c, s, ctx) {
       const miss = cols.filter(f => f.required && !f.showIf && (rec[f.key] === '' || rec[f.key] === undefined)).map(f => f.label);
       const badSel = cols.filter(f => f.type === 'select' && f.options && rec[f.key] && !pairs(f.options).some(([v]) => v === rec[f.key])).map(f => `${f.label} "${rec[f.key]}"`);
       if (miss.length) errs.push(`Row ${i + 2}: missing ${miss.join(', ')}`); else if (badSel.length) errs.push(`Row ${i + 2}: not recognised: ${badSel.join(', ')}`);
-      else { if (c.idFrom) rec.id = c.idFrom(rec); if (col === 'students') rec.reg_norm = norm(rec.reg_no); recs.push(rec); }
+      else { if (c.idFrom && col !== 'students' && col !== 'activities') rec.id = c.idFrom(rec); if (col === 'applications' && !rec.ref) rec.ref = data.newRef('AAC'); recs.push(rec); }
     });
     $('#cprev').textContent = `${recs.length} row(s) ready to import${errs.length ? `, ${errs.length} skipped` : ''}.`;
     $('#cErr').textContent = errs.slice(0, 6).join(' | ') + (errs.length > 6 ? ' ...' : '');
@@ -259,7 +271,12 @@ function csvPanel(col, c, s, ctx) {
   };
   $('#cgo').onclick = async () => {
     $('#cgo').disabled = true; $('#cgo').textContent = 'Importing…';
-    try { const n = await data.saveMany(col, recs); toast(`${n} imported`); window.dispatchEvent(new HashChangeEvent('hashchange')); }
+    try {
+      if (col === 'students') { data.assignIds(recs, await data.list('students')); }
+      const n = await data.saveMany(col, recs); toast(`${n} imported`);
+      if (col === 'students') { download('new-student-ids.csv', toCsv([['Name', 'Class', 'Student ID (reg. no.)', 'Parent ID', 'Parent name', 'Parent phone'], ...recs.map(r => [r.name, r.class, r.reg_no, r.parentId, r.parentName || '', r.parentPhone || ''])])); }
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    }
     catch (err) { $('#cErr').textContent = err.message; $('#cgo').disabled = false; $('#cgo').textContent = 'Import'; }
   };
 }
@@ -285,5 +302,32 @@ async function draftPanel(s) {
     if (!notes.length) { $('#dmsg').textContent = 'No topics found for that choice.'; return; }
     $('#dmsg').textContent = `Creating ${notes.length} drafts…`;
     try { await data.saveMany('lessonNotes', notes); toast(`${notes.length} drafts created`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { $('#dmsg').textContent = err.message; }
+  };
+}
+
+/* ---------- create sign-in accounts for every student and parent that has none ---------- */
+async function loginsPanel() {
+  const host = $('#mpanel');
+  if (!data.isLive) { host.innerHTML = '<div class="card bulk"><p>Logins are created on the live site (demo mode has one demo login).</p></div>'; return; }
+  host.innerHTML = '<div class="card bulk"><p class="hint">Checking accounts…</p></div>';
+  const [students, ur] = await Promise.all([data.list('students'), data.adminUsers({ action: 'list' })]);
+  const have = new Set((ur.users || []).map(u => String(u.email).toLowerCase()));
+  const need = []; const parents = new Map();
+  for (const st of students) {
+    if (st.reg_no && !have.has(data.loginEmail('student', st.reg_no))) need.push({ role: 'student', id: st.reg_no, name: st.name, regs: st.reg_no });
+    if (st.parentId) { const p = parents.get(st.parentId) || { role: 'parent', id: st.parentId, name: st.parentName || 'Parent', regs: [] }; p.regs.push(st.reg_no); parents.set(st.parentId, p); }
+  }
+  parents.forEach(p => { if (!have.has(data.loginEmail('parent', p.id))) need.push({ ...p, regs: p.regs.join(',') }); });
+  host.innerHTML = `<div class="card bulk"><h2 class="h2">Create logins</h2><p class="hint">${need.length ? `${need.length} account(s) are missing: ${need.filter(x => x.role === 'student').length} student(s) and ${need.filter(x => x.role === 'parent').length} parent(s). Students sign in with their reg. number, parents with their Parent ID. Passwords are generated for you to hand out.` : 'Every student and parent already has a login.'}</p>
+    <div id="lgout" class="hint" role="status"></div><div class="row-between" style="margin-top:12px"><button class="btn" id="lgo" type="button" ${need.length ? '' : 'disabled'}>Create ${need.length} account(s)</button><button class="btn btn-ghost" id="lgx" type="button">Close</button></div></div>`;
+  $('#lgx').onclick = () => { host.innerHTML = ''; };
+  $('#lgo').onclick = async () => {
+    const out = []; $('#lgo').disabled = true; let n = 0;
+    for (const a of need) { n++; $('#lgout').textContent = `Creating ${n} of ${need.length}…`;
+      const pw = Array.from({ length: 8 }, () => 'abcdefghjkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 31)]).join('');
+      const r = await data.adminUsers({ action: 'create', role: a.role, full_name: a.name, identifier: a.id, linked_regs: a.role === 'parent' ? a.regs : '', password: pw });
+      out.push([a.role, a.id, a.name, pw, r.error ? 'FAILED: ' + r.error : 'Created']); }
+    download('new-logins.csv', toCsv([['Role', 'Sign-in ID', 'Name', 'Password', 'Result'], ...out]));
+    $('#lgout').textContent = `${out.filter(o => o[4] === 'Created').length} created, ${out.filter(o => o[4] !== 'Created').length} failed. The list with passwords has been downloaded: print it and give each family their login.`;
   };
 }

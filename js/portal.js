@@ -1,6 +1,6 @@
 // Portal screens: announcements, prefects, album, feedback box, curriculum, lesson notes, library, fees, debtors, receipts, results upload.
 import * as data from './data.js';
-import { POSITIONS, FEE_CATEGORIES } from './schema.js';
+import { POSITIONS, FEE_CATEGORIES, ACTIVITIES } from './schema.js';
 import { mdToHtml, $, $$, esc, ic, opt, field, selectField, validate, toast, money, fmtDate, norm, CLASSES, CLASS_GROUPS, TERMS, download, toCsv, csvParse } from './ui.js';
 
 const AUD_OF = { student: 'students', parent: 'parents', teacher: 'teachers' };
@@ -330,18 +330,23 @@ export async function vPayHub(s) {
     bind() { $$('[data-ok]').forEach(b => b.onclick = async () => { b.disabled = true; try { await data.saveMany('payments', payments.filter(x => x.receipt === b.dataset.ok && x.status === 'Pending').map(x => ({ ...x, status: 'Confirmed', enteredBy: s.name }))); toast('Confirmed'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); b.disabled = false; } }); } };
 }
 
-export async function vDebtors() {
+export async function vDebtors(sess) {
+  const isAdmin = sess && sess.role === 'admin';
   const [students, fees, payments] = await Promise.all([data.list('students'), data.list('fees'), data.list('payments')]);
   const rows = students.map(st => { const L = data.feeLines(st, fees, payments); const due = L.reduce((a, l) => a + Number(l.fee.amount), 0), paid = L.reduce((a, l) => a + l.paid, 0); return { st, due, paid, bal: due - paid }; });
   const draw = cls => { const r = rows.filter(x => !cls || x.st.class === cls).sort((a, b) => b.bal - a.bal);
-    return { html: `<tbody>${r.map(x => `<tr><td>${esc(x.st.name)}<br><small class="hint">${esc(x.st.reg_no)}</small></td><td>${esc(x.st.class)}</td><td class="n">${money(x.due)}</td><td class="n">${money(x.paid)}</td><td class="n"><b>${money(x.bal)}</b></td></tr>`).join('') || '<tr><td colspan="5" class="hint">No students.</td></tr>'}</tbody>`, r }; };
+    return { html: `<tbody>${r.map(x => `<tr><td>${esc(x.st.name)}<br><small class="hint">${esc(x.st.reg_no)}</small></td><td>${esc(x.st.class)}</td><td class="n">${money(x.due)}</td><td class="n">${money(x.paid)}</td><td class="n"><b>${money(x.bal)}</b></td>${isAdmin ? `<td><button class="btn btn-ghost btn-sm" data-delst="${esc(x.st.id)}" data-name="${esc(x.st.name)}" type="button" aria-label="Delete ${esc(x.st.name)}">${ic('trash')}</button></td>` : ''}</tr>`).join('') || '<tr><td colspan="6" class="hint">No students.</td></tr>'}</tbody>`, r }; };
   return { title: 'Fee overview', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Bursary</p><h1 class="h1">Fee overview and debtors</h1>
     <div class="row-between" style="margin:16px 0"><div class="field" style="margin:0"><label for="dc">Class</label><select class="input" id="dc" style="max-width:240px"><option value="">All classes</option>${CLASSES.map(c => opt(c, '')).join('')}</select></div><button class="btn btn-ghost btn-sm" id="dexp" type="button">${ic('download')} Export CSV</button></div>
-    <div class="sum" id="dsum"></div><div class="card tbl-wrap" style="margin-top:14px"><table><thead><tr><th>Student</th><th>Class</th><th class="n">Due</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody id="dbody"></tbody></table></div>`,
+    <div class="sum" id="dsum"></div><div class="card tbl-wrap" style="margin-top:14px"><table><thead><tr><th>Student</th><th>Class</th><th class="n">Due</th><th class="n">Paid</th><th class="n">Balance</th>${isAdmin ? '<th></th>' : ''}</tr></thead><tbody id="dbody"></tbody></table></div>`,
     bind() {
       const up = () => { const d = draw($('#dc').value); $('#dbody').outerHTML = `<tbody id="dbody">${d.html.slice(7, -8)}</tbody>`;
         const t = d.r.reduce((a, x) => [a[0] + x.due, a[1] + x.paid, a[2] + x.bal], [0, 0, 0]); $('#dsum').innerHTML = `<div><small>Total due</small><b>${money(t[0])}</b></div><div><small>Collected</small><b>${money(t[1])}</b></div><div><small>Outstanding</small><b>${money(t[2])}</b></div>`; };
-      $('#dc').onchange = up; up();
+      const wire = () => $$('[data-delst]').forEach(b => b.onclick = async () => {
+        if (!confirm(`Delete ${b.dataset.name} and all their recorded payments? This cannot be undone.`)) return;
+        try { const reg = students.find(x => x.id === b.dataset.delst).reg_no; await data.removeMany('payments', payments.filter(p => p.regNo === reg).map(p => p.id)); await data.remove('students', b.dataset.delst); toast('Deleted'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); }
+      });
+      $('#dc').onchange = () => { up(); wire(); }; up(); wire();
       $('#dexp').onclick = () => download('fee-overview.csv', toCsv([['Name', 'Reg no', 'Class', 'Due', 'Paid', 'Balance'], ...draw($('#dc').value).r.map(x => [x.st.name, x.st.reg_no, x.st.class, x.due, x.paid, x.bal])]));
     } };
 }
@@ -474,5 +479,105 @@ export async function vAccounts() {
         prompt(`New password for ${b.dataset.name} (copy it and give it to them):`, pw); });
       $$('[data-del]').forEach(b => b.onclick = async () => { if (!confirm(`Delete the account of ${b.dataset.name}? This cannot be undone.`)) return;
         const res = await data.adminUsers({ action: 'delete', user_id: b.dataset.del }); if (res.error) return toast(res.error); toast('Account deleted'); window.dispatchEvent(new HashChangeEvent('hashchange')); });
+    } };
+}
+
+/* ---------- testimonials and alumni (public) ---------- */
+const isPub = t => t.published === true || t.published === 'true';
+export async function testimonialsStrip(n = 3) {
+  const t = (await data.list('testimonials')).filter(isPub).slice(0, n); if (!t.length) return '';
+  return `<div class="tgrid">${t.map(tcard).join('')}</div>`;
+}
+const tcard = t => `<article class="card tcard">${t.photo ? `<img class="msg-img" ${data.fileAttr(t.photo, 'src')} alt="${esc(t.name)}" loading="lazy">` : `<span class="msg-img pf-ini" aria-hidden="true">${esc(initials(t.name))}</span>`}
+  <div><p style="margin:0 0 8px">&ldquo;${esc(t.message)}&rdquo;</p><b>${esc(t.name)}</b><br><small class="hint">${esc([t.kind, t.setYear, t.now].filter(Boolean).join(' · '))}</small></div></article>`;
+export async function vTestimonials() {
+  const all = (await data.list('testimonials')).filter(isPub); const kinds = [...new Set(all.map(t => t.kind))];
+  return { title: 'Testimonials', nav: 'about', wide: false, html: `<p class="eyebrow">What people say</p><h1 class="h1">Alumni, graduating students and friends of the school</h1>
+    ${kinds.length > 1 ? `<div class="roles" id="tk"><a href="#/testimonials" data-k="" aria-current="page">All</a>${kinds.map(k => `<a href="#/testimonials" data-k="${esc(k)}">${esc(k)}</a>`).join('')}</div>` : ''}
+    <div class="tgrid" id="tl" style="margin-top:16px">${all.map(t => `<div data-k="${esc(t.kind)}">${tcard(t)}</div>`).join('') || '<p class="hint">Be the first to share your experience below.</p>'}</div>
+    <form class="card" id="tf" novalidate style="margin-top:24px"><h2 style="font-size:20px">Share your testimony</h2><p class="hint">Alumni, parents and friends of the school are welcome. The school reviews every message before it appears.</p>
+      ${field({ id: 'tname', label: 'Your name' })}
+      ${selectField({ id: 'tkind', label: 'You are', options: ['Alumni (past student)', 'Outgoing student (graduating)', 'Parent', 'Visitor / public'].map(x => opt(x, '')).join('') })}
+      ${field({ id: 'tyear', label: 'Set or year (optional)', required: false, opt: true })}
+      <div class="field" data-field="tmsg"><label for="tmsg">Your testimony</label><textarea class="input" id="tmsg" name="tmsg" required minlength="20" data-msg="Please write at least 20 characters"></textarea><span class="error" id="tmsg-e" role="alert"></span></div>
+      <div id="terr" class="error" role="alert"></div><button class="btn" type="submit" style="margin-top:14px">Send for approval</button></form>`,
+    bind() {
+      $$('#tk a').forEach(a => a.onclick = e => { e.preventDefault(); $$('#tk a').forEach(x => x.removeAttribute('aria-current')); a.setAttribute('aria-current', 'page'); $$('#tl [data-k]').forEach(d => { d.hidden = a.dataset.k && d.dataset.k !== a.dataset.k; }); });
+      $('#tf').onsubmit = async e => { e.preventDefault(); const f = e.currentTarget; if (!validate(f)) return;
+        try { await data.submitPublic('testimonials', { name: f.tname.value.trim(), kind: f.tkind.value, setYear: f.tyear.value.trim(), message: f.tmsg.value.trim(), published: false, status: 'New' }); f.reset(); toast('Thank you. Your testimony will appear after the school approves it.'); } catch { $('#terr').textContent = 'Could not send. Please try again.'; } };
+    } };
+}
+
+/* ---------- activities (public pages) ---------- */
+const ACT_DEFAULT = {
+  'Community service': ['Serving our community', 'Pupils and staff take part in clean-up drives, visits and outreach, learning that education is also about helping others.'],
+  'Sports': ['Sports and inter-house competitions', 'Football, athletics, relay and inter-house sports build teamwork, discipline and healthy bodies.'],
+  'Phonics and oral class': ['Phonics and oral class', 'Our early readers learn letter sounds, blending and clear spoken English through daily phonics and oral practice.'],
+  'School fellowship': ['School fellowship', 'A weekly time of prayer, worship and moral teaching that helps pupils grow in character and faith.'],
+  'Music': ['Music', 'Singing, rhythm and instruments help pupils express themselves and perform at school events.'],
+  'Excursion': ['Excursions', 'Educational trips take learning outside the classroom to places of interest, with teachers supervising every step.']
+};
+export const actSlug = k => k.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+export async function vActivity(slug) {
+  const key = ACTIVITIES.find(k => actSlug(k) === slug);
+  if (!key) return { title: 'Activities', nav: 'more', html: `<p class="eyebrow">Activities</p><h1 class="h1">Life outside the classroom</h1><div class="portals" style="margin-top:20px">${ACTIVITIES.map(k => `<a class="portal" href="#/activity/${actSlug(k)}"><span class="ico">${ic('cal')}</span><span><b>${esc(k)}</b><small>${esc(ACT_DEFAULT[k][1].slice(0, 60))}…</small></span></a>`).join('')}</div>` };
+  const rec = (await data.list('activities')).find(a => a.key === key) || {}; const d = ACT_DEFAULT[key];
+  const album = (await data.list('album')).filter(x => x.image && isImg(x.image) && [x.collection, x.category].some(v => v && v.toLowerCase().includes(key.split(' ')[0].toLowerCase())));
+  return { title: key, nav: 'more', html: `<a class="back" href="#/activity">${ic('back')} All activities</a><p class="eyebrow">Activities</p><h1 class="h1">${esc(rec.title || d[0])}</h1>
+    ${rec.image ? `<img class="orgimg" style="margin-top:16px" ${data.fileAttr(rec.image, 'src')} alt="${esc(key)}">` : ''}
+    <p style="max-width:62ch;margin-top:16px;white-space:pre-wrap">${esc(rec.body || d[1])}</p>${rec.file ? `<p><a class="btn btn-ghost btn-sm" ${data.fileAttr(rec.file)} target="_blank" rel="noopener">${ic('download')} Open ${esc(rec.file.name || 'file')}</a></p>` : ''}
+    ${album.length ? `<h2 class="h2s" style="margin-top:24px">${ic('image')} Photos</h2><div class="gallery">${album.map(p => `<figure class="gitem" style="margin:0"><img ${data.fileAttr(p.image, 'src')} alt="${esc(p.title)}" loading="lazy"><span>${esc(p.title)}</span></figure>`).join('')}</div>` : ''}
+    <p style="margin-top:24px"><a class="btn" href="#/apply">Apply for admission</a></p>` };
+}
+
+/* ---------- live classes ---------- */
+export async function vLive(s) {
+  const mine = await myStudents(s); const classes = [...new Set(mine.map(x => x.class))]; const staff = s && ['admin', 'teacher'].includes(s.role);
+  const all = (await data.list('liveclasses')).filter(x => staff || !classes.length || classes.includes(x.class)).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  const t = new Date().toISOString().slice(0, 10); const up = all.filter(x => (x.date || '') >= t), past = all.filter(x => (x.date || '') < t).reverse();
+  const card = x => `<article class="card cur"><div class="row-between"><h3>${esc(x.title)}</h3><span class="pill pill-blue">${esc(x.class)}</span></div><p class="hint" style="margin:4px 0">${esc([x.subject, x.date ? fmtDate(x.date) : '', x.time, x.teacherName].filter(Boolean).join(' · '))}</p>
+    ${x.info ? `<p>${esc(x.info)}</p>` : ''}<a class="btn btn-sm" href="#/live/${encodeURIComponent(x.id)}">${ic('monitor')} Enter classroom</a></article>`;
+  return { title: 'Live classes', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Online class</p><h1 class="h1">Live classes</h1>
+    ${staff ? `<p><a class="btn btn-sm" href="#/manage/liveclasses/new">${ic('plus')} Schedule a live class</a> <a class="btn btn-ghost btn-sm" href="#/manage/liveclasses">Manage</a></p>` : ''}
+    <h2 class="h2s" style="margin-top:18px">Upcoming and today</h2><div class="curlist">${up.map(card).join('') || '<p class="hint">No live class is scheduled yet.</p>'}</div>
+    ${past.length ? `<h2 class="h2s" style="margin-top:24px">Earlier classes</h2><div class="curlist">${past.slice(0, 10).map(card).join('')}</div>` : ''}` };
+}
+export async function vLiveRoom(id, s) {
+  const lc = (await data.list('liveclasses')).find(x => x.id === id);
+  if (!lc) return { title: 'Live class', nav: 'home', html: `<a class="back" href="#/p/live">${ic('back')} Live classes</a><p>That class was not found.</p>` };
+  const [nbs, lns] = await Promise.all([data.list('notebooks'), data.list('lessonNotes')]);
+  const q = (lc.noteTitle || lc.title || '').toLowerCase();
+  const match = [...nbs, ...lns].filter(n => n.class === lc.class && (!lc.subject || n.subject === lc.subject) && (n.title || '').toLowerCase().includes(q.slice(0, 40)) && q);
+  const room = 'AllAgesCollege-' + String(lc.id).replace(/[^A-Za-z0-9]/g, '').slice(-20); const name = encodeURIComponent((s && s.name) || 'Guest');
+  const link = lc.link || `https://meet.jit.si/${room}`; const key = 'aac.mynotes.' + lc.id; let mine = ''; try { mine = localStorage.getItem(key) || ''; } catch { /* ignore */ }
+  return { title: lc.title, nav: 'home', wide: true, html: `<div class="sect" style="padding-top:12px"><a class="back" href="#/p/live">${ic('back')} Live classes</a>
+    <div class="row-between"><div><p class="eyebrow">${esc(lc.class)} · ${esc(lc.subject)}</p><h1 class="h1" style="font-size:26px">${esc(lc.title)}</h1></div><a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${ic('monitor')} Open video class in a new tab</a></div>
+    <div class="liveg"><section>${lc.link ? `<div class="card"><p>This class uses its own meeting link. Press the button above to join, then come back to this page to follow the lesson note.</p></div>` : `<iframe class="liveframe" title="Live class video" allow="camera; microphone; fullscreen; display-capture" src="https://meet.jit.si/${room}#userInfo.displayName=%22${name}%22"></iframe><p class="hint">If the video does not load here, use the button above.</p>`}
+      <div class="card" style="margin-top:14px"><h2 class="h2s">${ic('book')} My notebook (write while the teacher explains)</h2><textarea class="input" id="mynote" rows="9" placeholder="Type your notes here. They are saved on this device.">${esc(mine)}</textarea>
+      <div class="row-between" style="margin-top:10px;justify-content:flex-start;gap:10px"><button class="btn btn-ghost btn-sm" id="dlnote" type="button">${ic('download')} Download my notes</button><span class="hint" id="nsaved"></span></div></div></section>
+    <aside><div class="card"><h2 class="h2s">${ic('list')} Today's note</h2>${match.length ? match.map(n => `<div class="nb"><h3 style="margin:8px 0">${esc(n.title)}</h3>${mdToHtml(n.body)}${n.file ? `<p><a class="link" ${data.fileAttr(n.file)} target="_blank" rel="noopener">${ic('file')} ${esc(n.file.name || 'File')}</a></p>` : ''}</div>`).join('<hr>') : `<p class="hint">No lesson note or notebook is linked to this class yet. ${s && ['admin', 'teacher'].includes(s.role) ? 'Add one in Notebooks with the same class, subject and topic, then type the topic in the class setup.' : 'Your teacher will share it.'}</p>`}
+      ${lc.info ? `<p class="hint">${esc(lc.info)}</p>` : ''}</div></aside></div></div>`,
+    bind() {
+      const ta = $('#mynote'); let t; ta.oninput = () => { clearTimeout(t); t = setTimeout(() => { try { localStorage.setItem(key, ta.value); $('#nsaved').textContent = 'Saved'; } catch { $('#nsaved').textContent = 'Could not save on this device'; } }, 500); };
+      $('#dlnote').onclick = () => download(`my-notes-${lc.subject}-${lc.title}.txt`.replace(/\s+/g, '-'), `${lc.class} · ${lc.subject} · ${lc.title}\n\n${ta.value}`);
+    } };
+}
+
+/* ---------- practice questions ---------- */
+export async function vPractice(s) {
+  const mine = await myStudents(s); const all = await data.list('questions'); const start = (mine[0] && mine[0].class) || 'JSS 1';
+  return { title: 'Practice questions', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Assessment</p><h1 class="h1">Practice questions</h1>
+    <p class="lead">Practise by class, subject and topic. Objective questions are marked for you. Real past papers uploaded by the school are in the Library under "Past questions".</p>
+    <div class="grid2" style="margin-top:14px"><div class="field"><label for="pc">Class</label>${classSelect('pc', start)}</div><div class="field"><label for="ps">Subject</label><select class="input" id="ps"></select></div></div>
+    <div class="field"><label for="pt2">Topic</label><select class="input" id="pt2"></select></div><div id="pq" style="margin-top:14px"></div>`,
+    bind() {
+      const inClass = () => all.filter(x => x.class === $('#pc').value);
+      const subs = () => { $('#ps').innerHTML = '<option value="">All subjects</option>' + [...new Set(inClass().map(x => x.subject))].sort().map(x => opt(x, '')).join(''); tops(); };
+      const tops = () => { $('#pt2').innerHTML = '<option value="">All topics</option>' + [...new Set(inClass().filter(x => !$('#ps').value || x.subject === $('#ps').value).map(x => x.topic).filter(Boolean))].sort().map(x => opt(x, '')).join(''); draw(); };
+      const draw = () => { const L = inClass().filter(x => (!$('#ps').value || x.subject === $('#ps').value) && (!$('#pt2').value || x.topic === $('#pt2').value));
+        $('#pq').innerHTML = L.length ? L.map((q, i) => q.type === 'Theory' ? `<article class="card" style="margin-bottom:12px"><b>${i + 1}. ${esc(q.question)}</b><details><summary class="link">Show model answer</summary><p>${esc(q.answer)}</p></details></article>`
+          : `<article class="card qcard" style="margin-bottom:12px" data-ans="${esc(String(q.answer).trim().toUpperCase())}"><b>${i + 1}. ${esc(q.question)}</b>${['a', 'b', 'c', 'd'].filter(k => q[k]).map(k => `<label class="check" style="margin-top:8px"><input type="radio" name="q${i}" value="${k.toUpperCase()}"><span>${k.toUpperCase()}. ${esc(q[k])}</span></label>`).join('')}<p class="hint qexp" hidden>${esc(q.explanation || '')}</p></article>`).join('') + `<button class="btn" id="pcheck" type="button">Check my answers</button><p id="pscore" class="h2s" style="margin-top:12px"></p>` : '<p class="hint">No questions for this choice yet.</p>';
+        const b = $('#pcheck'); if (b) b.onclick = () => { let ok = 0, n = 0; $$('.qcard').forEach(c => { n++; const sel = c.querySelector('input:checked'); const good = sel && sel.value === c.dataset.ans; if (good) ok++; c.style.borderColor = good ? 'var(--ok)' : 'var(--err)'; c.querySelector('.qexp').hidden = false; c.querySelector('.qexp').textContent = `Correct answer: ${c.dataset.ans}. ${c.querySelector('.qexp').textContent.replace(/^Correct answer: [A-D]\. /, '')}`; }); $('#pscore').textContent = `You scored ${ok} out of ${n}`; }; };
+      $('#pc').onchange = subs; $('#ps').onchange = tops; $('#pt2').onchange = draw; subs();
     } };
 }

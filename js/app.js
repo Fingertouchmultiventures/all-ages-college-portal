@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import * as data from './data.js';
-import { COLS } from './schema.js';
+import { COLS, ACTIVITIES } from './schema.js';
 import { $, $$, esc, ic, opt, field, selectField, validate, showPw, toast, CLASS_GROUPS, TERMS, today as todayStr } from './ui.js';
 import { hubTiles, vManage } from './manage.js';
 import * as pt from './portal.js';
@@ -19,11 +19,11 @@ const ROLES = {
 };
 const SOON = n => [n[0], n[1], null];
 const TILES = {
-  student: [['Curriculum', 'list', '#/p/curriculum'], ['Lesson notes', 'book', '#/p/notes'], ['Notebooks', 'book', '#/p/notebooks'], ['Assignments', 'task', '#/p/assignments'], ['Tests and exams', 'form', '#/p/tests'], ['Scorecard', 'chart', '#/p/scorecard'], ['Library and files', 'folder', '#/p/library'], ['Fees', 'wallet', '#/p/fees'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], SOON(['CBT', 'monitor'])],
-  parent: [['Fees and payments', 'card', '#/p/pay'], ['Scorecard', 'chart', '#/p/scorecard'], ['Check result', 'award', '#/result'], ['Assignments', 'task', '#/p/assignments'], ['Tests and exams', 'form', '#/p/tests'], ['Notebooks', 'book', '#/p/notebooks'], ['Curriculum', 'list', '#/p/curriculum'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], ['Feedback box', 'mail', '#/feedback']],
-  teacher: [['Enter scores for a class', 'chart', '#/p/scoresheet'], ['Notebooks (student view)', 'book', '#/p/notebooks'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album']],
+  student: [['Curriculum', 'list', '#/p/curriculum'], ['Lesson notes', 'book', '#/p/notes'], ['Live classes', 'monitor', '#/p/live'], ['Notebooks', 'book', '#/p/notebooks'], ['Practice questions', 'form', '#/p/practice'], ['Assignments', 'task', '#/p/assignments'], ['Tests and exams', 'form', '#/p/tests'], ['Scorecard', 'chart', '#/p/scorecard'], ['Library and files', 'folder', '#/p/library'], ['Fees', 'wallet', '#/p/fees'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], SOON(['CBT', 'monitor'])],
+  parent: [['Fees and payments', 'card', '#/p/pay'], ['Live classes', 'monitor', '#/p/live'], ['Practice questions', 'form', '#/p/practice'], ['Scorecard', 'chart', '#/p/scorecard'], ['Check result', 'award', '#/result'], ['Assignments', 'task', '#/p/assignments'], ['Tests and exams', 'form', '#/p/tests'], ['Notebooks', 'book', '#/p/notebooks'], ['Curriculum', 'list', '#/p/curriculum'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album'], ['Feedback box', 'mail', '#/feedback']],
+  teacher: [['Live classes', 'monitor', '#/p/live'], ['Enter scores for a class', 'chart', '#/p/scoresheet'], ['Notebooks (student view)', 'book', '#/p/notebooks'], ['Announcements', 'mega', '#/announcements'], ['School album', 'image', '#/album']],
   bursar: [['Payment portal', 'card', '#/p/pay'], ['Fee overview', 'chart', '#/p/debtors'], ['Announcements', 'mega', '#/announcements']],
-  admin: [['Payment portal', 'card', '#/p/pay'], ['Accounts and passwords', 'user', '#/accounts'], ['Upload results', 'award', '#/results-import'], ['Enter scores for a class', 'chart', '#/p/scoresheet'], ['Fee overview', 'chart', '#/p/debtors'], ['Announcements page', 'mega', '#/announcements'], ['School album page', 'image', '#/album']]
+  admin: [['Live classes', 'monitor', '#/p/live'], ['Payment portal', 'card', '#/p/pay'], ['Accounts and passwords', 'user', '#/accounts'], ['Upload results', 'award', '#/results-import'], ['Enter scores for a class', 'chart', '#/p/scoresheet'], ['Fee overview', 'chart', '#/p/debtors'], ['Announcements page', 'mega', '#/announcements'], ['School album page', 'image', '#/album']]
 };
 
 /* ---------- site settings in the page shell ---------- */
@@ -61,7 +61,7 @@ async function vHome() {
   const quick = [['#/apply', 'form', 'Apply for admission'], ['#/result', 'award', 'Check result'], ['#/login/payment', 'card', 'Pay school fees'], ['#/login/student', 'cap', 'Student portal'], ['#/album', 'image', 'School album'], ['#/feedback', 'mail', 'Contact us']]
     .map(([h, i, t]) => `<a class="qtile" href="${h}">${ic(i)}<span>${t}</span></a>`).join('');
   const ann = await pt.annCarousel(null);
-  const lead = pt.leadershipCards(s);
+  const lead = pt.leadershipCards(s); const tst = await pt.testimonialsStrip(3);
   return { title: 'Home', nav: 'home', wide: true, html: `
     <section class="hero" aria-label="Welcome">
       <div class="hero-text"><p class="eyebrow">Admissions open · 2026/2027</p><h1>${esc(s.welcomeTitle)}</h1><p>${esc(s.motto)}. Creche, Nursery, Primary, Junior and Senior Secondary in Apete, Ibadan.</p>
@@ -74,6 +74,8 @@ async function vHome() {
     <section class="sect"><div class="sect-h"><h2>Life at ${esc(s.schoolName)}</h2><a class="link" href="#/album">Open the album</a></div>${await pt.albumCarousel()}
       <div class="split" style="margin-top:16px"><a class="action action-feedback" href="#/about">${ic('cap')}<b>About the school</b><span>Classes, subjects, teachers, facilities, activities and organogram</span></a>
       <a class="action action-feedback" href="#/feedback">${ic('mail')}<b>Enquiry, complaint or suggestion?</b><span>Open to everyone. Write to the school.</span></a></div></section>
+    <section class="sect"><div class="sect-h"><h2>Activities</h2></div><div class="portals">${ACTIVITIES.map(k => `<a class="portal" href="#/activity/${pt.actSlug(k)}"><span class="ico">${ic('cal')}</span><span><b>${k}</b><small>See more</small></span></a>`).join('')}</div></section>
+    ${tst ? `<section class="sect"><div class="sect-h"><h2>What alumni and parents say</h2><a class="link" href="#/testimonials">See all and share yours</a></div>${tst}</section>` : ''}
     ${lead ? `<section class="sect">${lead}</section>` : ''}
     <section class="sect">${await pt.prefectsStrip()}${await contactBlock()}</section>`,
     bind() { $$('.carousel', view).forEach(c => pt.bindCarousel(c.parentElement)); } };
@@ -263,6 +265,8 @@ async function render() {
       if (!s) v = need();
       else if (a === 'curriculum') v = await pt.vCurriculum(s);
       else if (a === 'notes') v = await pt.vNotes(s);
+      else if (a === 'live') v = await pt.vLive(s);
+      else if (a === 'practice') v = await pt.vPractice(s);
       else if (a === 'notebooks') v = await pt.vNotebooks(s);
       else if (a === 'assignments') v = await pt.vAssignments(s);
       else if (a === 'tests') v = await pt.vTests(s);
@@ -271,8 +275,11 @@ async function render() {
       else if (a === 'pay') v = ['admin', 'bursar'].includes(s.role) ? await pt.vPayHub(s) : await pt.vFees(s);
       else if (a === 'library') v = await pt.vLibrary(s);
       else if (a === 'fees') v = await pt.vFees(s);
-      else if (a === 'debtors') v = ['admin', 'bursar'].includes(s.role) ? await pt.vDebtors() : null;
+      else if (a === 'debtors') v = ['admin', 'bursar'].includes(s.role) ? await pt.vDebtors(s) : null;
     }
+    else if (route === 'live') v = s ? await pt.vLiveRoom(a, s) : need();
+    else if (route === 'testimonials') v = await pt.vTestimonials();
+    else if (route === 'activity') v = await pt.vActivity(a);
     else if (route === 'receipt') v = s ? await pt.vReceipt(a) : need();
     else if (route === 'results-import') v = s && s.role === 'admin' ? await pt.vResultsImport() : need();
     else if (route === 'about') v = await pt.vAbout();

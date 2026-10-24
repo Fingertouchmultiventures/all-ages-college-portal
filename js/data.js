@@ -263,6 +263,33 @@ export async function getReplies() {
 }
 export function markRepliesSeen(list) { const sn = seen(); list.forEach(m => { sn[m.ref] = fbKey(m); }); store.set('aac.fbseen', sn); }
 
+/* ---------- student and parent IDs ---------- */
+const nextNum = (vals, re) => vals.map(v => { const m = String(v || '').match(re); return m ? Number(m[1]) : -1; }).reduce((a, b) => Math.max(a, b), -1) + 1;
+// Fills in reg_no (AAC/ST/###) and parentId (AAC/P/###) for new students. Siblings (same parent phone or parent ID) share one parent ID.
+export function assignIds(recs, existing) {
+  const all = [...existing]; const phoneMap = new Map();
+  existing.forEach(x => { const k = norm(x.parentPhone); if (k && x.parentId) phoneMap.set(k, x.parentId); });
+  const pad = n => String(n).padStart(3, '0');
+  for (const r of recs) {
+    if (!r.reg_no) r.reg_no = 'AAC/ST/' + pad(nextNum([...all.map(x => x.reg_no), ...recs.map(x => x.reg_no)], /^AAC\/ST\/(\d+)$/i));
+    if (!r.parentId) {
+      const k = norm(r.parentPhone);
+      r.parentId = (k && phoneMap.get(k)) || 'AAC/P/' + pad(nextNum([...all.map(x => x.parentId), ...recs.map(x => x.parentId), ...phoneMap.values()], /^AAC\/P\/(\d+)$/i));
+    }
+    const k = norm(r.parentPhone); if (k) phoneMap.set(k, r.parentId);
+    r.reg_norm = norm(r.reg_no); r.id = 'stu-' + r.reg_norm; all.push(r);
+  }
+  return recs;
+}
+export async function admitApplications(apps, who) {
+  const existing = await list('students'); const done = [];
+  const studs = apps.map(a => ({ name: `${a.firstName} ${a.surname}`.trim(), class: a.classApplied, gender: a.gender, parentName: a.guardianName, parentPhone: a.phone, applicationRef: a.ref || a.id }));
+  assignIds(studs, existing);
+  await saveMany('students', studs);
+  await saveMany('applications', apps.map((a, i) => ({ ...a, status: 'Admitted', admittedAs: studs[i].reg_no, parentId: studs[i].parentId, adminNote: ((a.adminNote ? a.adminNote + ' · ' : '') + `Admitted by ${who}`) })));
+  return studs;
+}
+
 /* ---------- admissions ---------- */
 export async function submitApplication(form) {
   const ref = newRef('AAC');

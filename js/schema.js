@@ -6,6 +6,7 @@ import { CONFIG } from './config.js';
 export const POSITIONS = ['Head Boy', 'Head Girl', 'Assistant Head Boy', 'Assistant Head Girl', 'Senior Prefect (Boy)', 'Senior Prefect (Girl)', 'Games Prefect', 'Sports Prefect', 'Library Prefect', 'Dining Hall Prefect', 'Health Prefect', 'Time Keeper', 'Welfare Prefect', 'Social Prefect', 'Disciplinary Prefect', 'Labour Prefect', 'Environment and Sanitation Prefect', 'Chapel / Mosque Prefect', 'Press Prefect', 'Assembly Prefect', 'Boarding / House Prefect', 'Class Prefect', 'Class Captain', 'Assistant Class Captain', 'Prefect'];
 export const ORG_LEVELS = [['1', 'Level 1: Proprietor / Board'], ['2', 'Level 2: Principal / Head of school'], ['3', 'Level 3: Vice principal / Heads of section'], ['4', 'Level 4: Teachers and staff'], ['5', 'Level 5: Support staff']];
 export const FILE_TYPES = ['Textbook', 'Extract', 'Article', 'Past questions', 'Reference link', 'Circular', 'Form', 'Result sheet', 'Other'];
+export const ACTIVITIES = ['Community service', 'Sports', 'Phonics and oral class', 'School fellowship', 'Music', 'Excursion'];
 export const FEE_CATEGORIES = ['School fee', 'Textbooks and exercise books', 'Uniforms', 'Other'];
 const AUDIENCES = [['all', 'Everyone (public)'], ['students', 'Students only'], ['parents', 'Parents only'], ['teachers', 'Teachers only']];
 const FILE_AUD = [['all', 'Everyone signed in'], ['students', 'Students'], ['parents', 'Parents'], ['teachers', 'Teachers']];
@@ -54,17 +55,18 @@ export const COLS = {
   students: {
     csv: true,
     label: 'Students', one: 'student', icon: 'cap', roles: ['admin'],
-    sample: ['Ada Okafor', 'AAC/2026/101', 'JSS 1', 'Female', 'Mrs Okafor', '08012345678'],
+    sample: ['Ada Okafor', '', 'JSS 1', 'Female', 'Mrs Okafor', '08012345678', ''],
     title: r => r.name, sub: r => `${r.reg_no} · ${r.class}`,
     sort: (a, b) => String(a.name).localeCompare(String(b.name)),
     idFrom: r => 'stu-' + String(r.reg_no).toUpperCase().replace(/[^A-Z0-9]/g, ''),
     fields: [
       { key: 'name', label: 'Full name', type: 'text', required: true },
-      { key: 'reg_no', label: 'Reg. number', type: 'text', required: true, hint: 'Example: AAC/2026/001' },
+      { key: 'reg_no', label: 'Reg. number', type: 'text', hint: 'Leave empty and the next number (AAC/ST/002...) is given automatically' },
       { key: 'class', label: 'Class', type: 'select', options: CLASSES, required: true },
       { key: 'gender', label: 'Gender', type: 'select', options: ['Female', 'Male'] },
       { key: 'parentName', label: 'Parent or guardian', type: 'text' },
-      { key: 'parentPhone', label: 'Parent phone', type: 'text' }
+      { key: 'parentPhone', label: 'Parent phone', type: 'text', hint: 'Children with the same parent phone share one parent ID automatically' },
+      { key: 'parentId', label: 'Parent ID (parent login)', type: 'text', hint: 'Leave empty to assign automatically (AAC/P/002...). Use an existing parent ID to add a child to that parent.' }
     ]
   },
   curriculum: {
@@ -203,19 +205,81 @@ export const COLS = {
     ]
   },
   applications: {
-    label: 'Applications', one: 'application', icon: 'form', roles: ['admin'], noCreate: true,
+    label: 'Applications', one: 'application', icon: 'form', roles: ['admin'], csv: true, sample: ['','Ada','Okafor','2016-05-01','Female','Primary 3','Little Stars School','Mrs Okafor','Mother','08012345678','08012345678','','Ibadan','New',''],
     title: r => `${r.firstName} ${r.surname}: ${r.classApplied}`, sub: r => `${r.ref} · ${r.guardianName} · ${r.phone} · ${r.status || 'New'}`,
+    extra: r => r.status === 'Admitted' ? '' : `<button class="btn btn-sm" type="button" data-admit="${r.id}">Admit</button>`,
     sort: (a, b) => String(b._created || '').localeCompare(String(a._created || '')),
     fields: [
-      { key: 'ref', label: 'Reference', type: 'text', readonly: true }, { key: 'firstName', label: 'First name', type: 'text', readonly: true },
-      { key: 'surname', label: 'Surname', type: 'text', readonly: true }, { key: 'dob', label: 'Date of birth', type: 'text', readonly: true },
-      { key: 'gender', label: 'Gender', type: 'text', readonly: true }, { key: 'classApplied', label: 'Class', type: 'text', readonly: true },
-      { key: 'previousSchool', label: 'Previous school', type: 'text', readonly: true }, { key: 'guardianName', label: 'Parent or guardian', type: 'text', readonly: true },
-      { key: 'relationship', label: 'Relationship', type: 'text', readonly: true }, { key: 'phone', label: 'Phone', type: 'text', readonly: true },
-      { key: 'whatsapp', label: 'WhatsApp', type: 'text', readonly: true }, { key: 'email', label: 'Email', type: 'text', readonly: true },
-      { key: 'address', label: 'Address', type: 'textarea', readonly: true },
-      { key: 'status', label: 'Status', type: 'select', options: ['New', 'Contacted', 'Form collected', 'Exam scheduled', 'Admitted', 'Declined'], required: true },
+      { key: 'ref', label: 'Reference (optional)', type: 'text' }, { key: 'firstName', label: 'First name', type: 'text', required: true },
+      { key: 'surname', label: 'Surname', type: 'text', required: true }, { key: 'dob', label: 'Date of birth', type: 'text' },
+      { key: 'gender', label: 'Gender', type: 'text' }, { key: 'classApplied', label: 'Class', type: 'select', options: CLASSES, required: true },
+      { key: 'previousSchool', label: 'Previous school', type: 'text' }, { key: 'guardianName', label: 'Parent or guardian', type: 'text', required: true },
+      { key: 'relationship', label: 'Relationship', type: 'text' }, { key: 'phone', label: 'Phone', type: 'text', required: true },
+      { key: 'whatsapp', label: 'WhatsApp', type: 'text' }, { key: 'email', label: 'Email', type: 'text' },
+      { key: 'address', label: 'Address', type: 'textarea' },
+      { key: 'status', label: 'Status', type: 'select', options: ['New', 'Contacted', 'Form collected', 'Exam scheduled', 'Admitted', 'Declined'], required: true, default: 'New' },
       { key: 'adminNote', label: 'Our note', type: 'textarea' }
+    ]
+  },
+  testimonials: {
+    label: 'Testimonials and alumni', one: 'testimonial', icon: 'star', roles: ['admin'],
+    title: r => r.name, sub: r => `${r.kind || 'Alumni'}${r.setYear ? ' · ' + r.setYear : ''} · ${r.published === true || r.published === 'true' ? 'Published' : 'Waiting for approval'}`,
+    sort: (a, b) => String(b._created || '').localeCompare(String(a._created || '')),
+    fields: [
+      { key: 'name', label: 'Name', type: 'text', required: true },
+      { key: 'kind', label: 'Who is this?', type: 'select', options: ['Alumni (past student)', 'Outgoing student (graduating)', 'Parent', 'Teacher or staff', 'Visitor / public'], required: true, default: 'Alumni (past student)' },
+      { key: 'setYear', label: 'Set / graduation year or class (optional)', type: 'text', hint: 'Example: Set of 2024, SSS 3 2026/2027' },
+      { key: 'now', label: 'What they do now / where they are going (optional)', type: 'text', hint: 'Example: 300L Medicine, University of Ibadan' },
+      { key: 'message', label: 'Testimony', type: 'textarea', required: true },
+      { key: 'photo', label: 'Photo', type: 'image' },
+      { key: 'published', label: 'Show on the public website', type: 'checkbox' }
+    ]
+  },
+  activities: {
+    label: 'Activities pages', one: 'activity page', icon: 'cal', roles: ['admin'],
+    title: r => r.title, sub: r => (r.summary || '').slice(0, 70),
+    idFrom: r => 'act-' + String(r.key).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    sort: (a, b) => ACTIVITIES.indexOf(a.key) - ACTIVITIES.indexOf(b.key),
+    fields: [
+      { key: 'key', label: 'Activity', type: 'select', options: ACTIVITIES, required: true },
+      { key: 'title', label: 'Page heading', type: 'text', required: true },
+      { key: 'summary', label: 'One-line summary', type: 'text' },
+      { key: 'body', label: 'Full description', type: 'textarea', required: true },
+      { key: 'image', label: 'Main picture', type: 'image' },
+      { key: 'file', label: 'Attach a flier or document (optional)', type: 'file' }
+    ]
+  },
+  liveclasses: {
+    label: 'Live classes', one: 'live class', icon: 'monitor', roles: ['admin', 'teacher'],
+    title: r => r.title, sub: r => `${r.class} · ${r.subject} · ${r.date ? fmtDate(r.date) : ''} ${r.time || ''}${r.teacherName ? ' · ' + r.teacherName : ''}`,
+    sort: (a, b) => String(b.date || '').localeCompare(String(a.date || '')),
+    fields: [
+      { key: 'class', label: 'Class', type: 'select', options: CLASSES, required: true },
+      { key: 'subject', label: 'Subject', type: 'text', required: true },
+      { key: 'title', label: 'Topic', type: 'text', required: true },
+      { key: 'date', label: 'Date', type: 'date', required: true, default: 'today' },
+      { key: 'time', label: 'Start time', type: 'text', hint: 'Example: 10:00 AM' },
+      { key: 'link', label: 'Meeting link (optional)', type: 'text', hint: 'Paste a Google Meet or Zoom link. Leave empty to use the built-in classroom (Jitsi).' },
+      { key: 'noteTitle', label: 'Lesson note or notebook topic to teach from (optional)', type: 'text', hint: 'Type the topic name exactly as in Lesson notes or Notebooks' },
+      { key: 'info', label: 'Instructions for students (optional)', type: 'textarea' }
+    ]
+  },
+  questions: {
+    csv: true, sample: ['JSS 1', 'Mathematics', 'Fractions', 'Objective', 'What is 1/2 + 1/4?', '1/4', '2/6', '3/4', '1/8', 'C', '1/2 = 2/4, so 2/4 + 1/4 = 3/4', 'Practice'],
+    label: 'Question bank', one: 'question', icon: 'form', roles: ['admin', 'teacher'],
+    title: r => String(r.question || '').slice(0, 90), sub: r => `${r.class} · ${r.subject} · ${r.topic || ''} · ${r.type} · ${r.source || ''}`,
+    sort: (a, b) => CLASSES.indexOf(a.class) - CLASSES.indexOf(b.class) || String(a.subject).localeCompare(String(b.subject)),
+    fields: [
+      { key: 'class', label: 'Class', type: 'select', options: CLASSES, required: true },
+      { key: 'subject', label: 'Subject', type: 'text', required: true },
+      { key: 'topic', label: 'Topic', type: 'text' },
+      { key: 'type', label: 'Type', type: 'select', options: ['Objective', 'Theory'], required: true, default: 'Objective' },
+      { key: 'question', label: 'Question', type: 'textarea', required: true },
+      { key: 'a', label: 'Option A', type: 'text' }, { key: 'b', label: 'Option B', type: 'text' },
+      { key: 'c', label: 'Option C', type: 'text' }, { key: 'd', label: 'Option D', type: 'text' },
+      { key: 'answer', label: 'Correct answer (A, B, C or D) or model answer', type: 'text', required: true },
+      { key: 'explanation', label: 'Explanation (optional)', type: 'textarea' },
+      { key: 'source', label: 'Source', type: 'select', options: ['Practice', 'WAEC-style', 'NECO-style', 'BECE-style', 'Common Entrance style', 'Teacher set'], default: 'Practice' }
     ]
   },
   album: {
@@ -279,7 +343,7 @@ export const COLS = {
     ]
   }
 };
-export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'fees', 'payments', 'feedback', 'applications', 'album', 'files', 'settings'];
+export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'liveclasses', 'questions', 'fees', 'payments', 'feedback', 'applications', 'album', 'testimonials', 'activities', 'files', 'settings'];
 
 function feeScopeLabel(r, c) {
   if (r.scope === 'class') return r.targetClass;
