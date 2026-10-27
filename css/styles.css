@@ -371,3 +371,9 @@ body.wide #view{max-width:1180px;padding-top:0}
 
 .camvid{width:100%;max-width:360px;border-radius:14px;background:#0F1A47;margin-top:10px;transform:scaleX(-1)}
 .meter{height:8px;border-radius:99px;background:#e5e8f3;max-width:360px;margin-top:8px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:#16a34a;transition:width .08s}
+
+.av{width:36px;height:36px;border-radius:50%;object-fit:cover;flex:none;background:#e8ecfa}
+.av-ini{display:inline-grid;place-items:center;background:var(--navy,#14204f);color:#fff;font-weight:700;font-size:13px}
+.av-lg{width:72px;height:72px;font-size:24px;border:3px solid #fff;box-shadow:0 2px 10px rgba(15,23,70,.18)}
+.meprof{display:flex;align-items:center;gap:14px;margin:10px 0 4px}
+.mrow>.av{margin-right:2px}

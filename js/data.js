@@ -291,9 +291,10 @@ export function assignIds(recs, existing) {
 }
 export async function admitApplications(apps, who) {
   const existing = await list('students'); const done = [];
-  const studs = apps.map(a => ({ _dob: a.dob, name: `${a.firstName} ${a.surname}`.trim(), class: a.classApplied, gender: a.gender, parentName: a.guardianName, parentPhone: a.phone, applicationRef: a.ref || a.id }));
+  const studs = apps.map(a => ({ photo: a.photo, _dob: a.dob, name: `${a.firstName} ${a.surname}`.trim(), class: a.classApplied, gender: a.gender, parentName: a.guardianName, parentPhone: a.phone, applicationRef: a.ref || a.id }));
   assignIds(studs, existing);
   const stClean = studs.map(({ _dob, ...r }) => r); await saveMany('students', stClean);
+  for (const st of studs) if (st.photo) await setUserPic({ regNo: st.reg_no, name: st.name, role: 'student', photo: st.photo }).catch(() => {});
   for (const st of studs) if (st._dob) await saveBirthday({ id: 'bd-' + norm(st.reg_no), key: st.reg_no, name: st.name, kind: 'Student', class: st.class, md: st._dob });
   await saveMany('applications', apps.map((a, i) => ({ ...a, status: 'Admitted', admittedAs: studs[i].reg_no, parentId: studs[i].parentId, adminNote: ((a.adminNote ? a.adminNote + ' · ' : '') + `Admitted by ${who}`) })));
   return studs;
@@ -414,7 +415,7 @@ export async function syncBirthdays() {
     const bio = bios.find(b => norm(b.regNo) === norm(st.reg_no)); const app = apps.find(a => a.ref && a.ref === st.applicationRef || a.admittedAs === st.reg_no);
     const md = mdOf((bio && bio.dob) || (app && app.dob)); if (!md) continue; const id = 'bd-' + norm(st.reg_no);
     if (keep.has(id)) continue;
-    await saveBirthday({ id, key: st.reg_no, name: st.name, kind: 'Student', class: st.class, md, photo: bio && bio.photo }); n++;
+    await saveBirthday({ id, key: st.reg_no, name: st.name, kind: 'Student', class: st.class, md, photo: (bio && bio.photo) || st.photo }); n++;
   }
   for (const t of staff) { const md = mdOf(t.birthMonth && t.birthDay ? `${String(t.birthMonth).padStart(2, '0')}-${String(t.birthDay).padStart(2, '0')}` : ''); if (!md) continue; await saveBirthday({ id: 'bd-staff-' + t.id, key: t.id, name: t.name, kind: 'Teacher', class: t.role || '', md, photo: t.photo }); n++; }
   return n;
@@ -423,3 +424,19 @@ export async function syncBirthdays() {
 export async function saveNotice({ title, message, audience, cls, regs, by }) {
   return save('notices', { title, message, audience: audience || 'all', class: cls || '', regs: regs || [], date: new Date().toISOString(), by: by || '' });
 }
+
+/* ---------- profile pictures for every user ---------- */
+export async function setUserPic({ userId, regNo, name, role, photo }) {
+  if (!photo || (!userId && !regNo)) return null;
+  return save('userpics', { id: userId ? 'pic-' + userId : 'pic-reg-' + norm(regNo), userId: userId || '', regNo: regNo || '', name: name || '', role: role || '', photo });
+}
+// Look up a person's picture: by account id, then reg. number, then name (staff, students).
+export async function avatars() {
+  const [pics, staff, studs] = await Promise.all([list('userpics').catch(() => []), list('staff').catch(() => []), list('students').catch(() => [])]);
+  const byId = {}, byReg = {}, byName = {};
+  staff.forEach(t => { if (t.photo) byName[String(t.name || '').toLowerCase()] = t.photo; });
+  studs.forEach(t => { if (t.photo) { byReg[norm(t.reg_no)] = t.photo; byName[String(t.name || '').toLowerCase()] = t.photo; } });
+  pics.forEach(t => { if (t.userId) byId[t.userId] = t.photo; if (t.regNo) byReg[norm(t.regNo)] = t.photo; if (t.name && !byName[String(t.name).toLowerCase()]) byName[String(t.name).toLowerCase()] = t.photo; });
+  return { byId, byReg, byName };
+}
+export const picOf = (av, { userId, regNo, name } = {}) => (userId && av.byId[userId]) || (regNo && av.byReg[norm(regNo)]) || (name && av.byName[String(name).toLowerCase()]) || null;

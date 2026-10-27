@@ -119,6 +119,7 @@ async function vDashboard(s) {
   if (role === 'admin') tiles = [...hubTiles(s).map(t => [t[0], t[1], t[2]]), ...mine];
   else if (role === 'teacher') tiles = [...hubTiles(s), ...mine];
   else if (role === 'bursar') tiles = [...hubTiles(s), ...mine];
+  const seen = new Set(); tiles = tiles.filter(([n, i, href]) => { if (/#\/manage\/(liveclasses|weekly)$/.test(href || '')) return false; const k = (href || n); if (seen.has(k)) return false; seen.add(k); return true; });
   const html = tiles.map(([n, i, href]) => href ? `<a class="tile" href="${href}">${ic(i)}<b>${esc(n)}</b><small>Open</small></a>`
     : `<div class="tile" aria-disabled="true">${ic(i)}<b>${esc(n)}</b><small><span class="pill">Coming soon</span></small></div>`).join('');
   const anns = (await pt.announcementsFor(s, 3));
@@ -126,12 +127,13 @@ async function vDashboard(s) {
   return { title: 'Dashboard', nav: 'home', html: `
     ${await pt.albumCarousel()}
     <p class="eyebrow" style="margin-top:18px">${esc(role)} portal</p><h1 class="h1">Welcome, ${esc(s.name)}</h1>
+    ${await pt.profileBadge(s)}
     ${(await pt.announcementsFor(s)).filter(a => a.mandatory).slice(0, 2).map(a => `<div class="mand"><b>${ic('mega')} Mandatory notice: ${esc(a.title)}</b><p>${esc(a.body)}</p></div>`).join('')}
     <div class="tiles" style="margin-top:20px">${html}</div>
     ${anns.length ? `<section style="margin-top:28px"><div class="row-between"><h2 class="h2s">${ic('mega')} Latest announcements</h2><a class="link" href="#/announcements">See all</a></div><div class="anns">${anns.map(pt.annCard).join('')}</div></section>` : ''}
     ${showPrefects ? await pt.prefectsStrip() : ''}
     <button class="btn btn-ghost" id="out" style="margin-top:26px" type="button">${ic('out')} Sign out</button>`,
-    bind() { pt.bindCarousel(view); $('#out').onclick = async () => { await data.signOut(); location.hash = '#/'; window.dispatchEvent(new Event('aac:login')); }; } };
+    bind() { pt.bindCarousel(view); pt.bindProfileBadge(s); $('#out').onclick = async () => { await data.signOut(); location.hash = '#/'; window.dispatchEvent(new Event('aac:login')); }; } };
 }
 
 /* ---- application form ---- */

@@ -71,6 +71,7 @@ export const COLS = {
       { key: 'gender', label: 'Gender', type: 'select', options: ['Female', 'Male'] },
       { key: 'parentName', label: 'Parent or guardian', type: 'text' },
       { key: 'parentPhone', label: 'Parent phone', type: 'text', hint: 'Children with the same parent phone share one parent ID automatically' },
+      { key: 'photo', label: 'Profile picture (shows on their dashboard, posts and messages)', type: 'image' },
       { key: 'parentId', label: 'Parent ID (parent login)', type: 'text', hint: 'Leave empty to assign automatically (AAC/P/002...). Use an existing parent ID to add a child to that parent.' }
     ]
   },
@@ -215,6 +216,7 @@ export const COLS = {
     extra: r => r.status === 'Admitted' ? '' : `<button class="btn btn-sm" type="button" data-admit="${r.id}">Admit</button>`,
     sort: (a, b) => String(b._created || '').localeCompare(String(a._created || '')),
     fields: [
+      { key: 'photo', label: 'Passport photograph (optional)', type: 'image' },
       { key: 'ref', label: 'Reference (optional)', type: 'text' }, { key: 'firstName', label: 'First name', type: 'text', required: true },
       { key: 'surname', label: 'Surname', type: 'text', required: true }, { key: 'dob', label: 'Date of birth', type: 'text' },
       { key: 'gender', label: 'Gender', type: 'text' }, { key: 'classApplied', label: 'Class', type: 'select', options: CLASSES, required: true },
@@ -397,6 +399,7 @@ export const COLS = {
     label: 'Message parents (SMS)', one: 'message', icon: 'mail', roles: ['admin'], noCreate: true, custom: true,
     title: r => r.label || 'Message', sub: r => `${r.status || ''} · ${r.count || 0} of ${r.total || 0} numbers`, fields: []
   },
+  userpics: { label: 'Profile pictures', one: 'picture', icon: 'user', roles: ['admin'], noCreate: true, hidden: true, title: r => r.name || r.userId, sub: r => r.role || '', fields: [{ key: 'name', label: 'Name', type: 'text', readonly: true }] },
   smslog: {
     label: 'SMS history', one: 'message', icon: 'mail', roles: ['admin'], noCreate: true, hidden: true,
     title: r => `${r.label || 'Message'}: ${r.status || ''}`, sub: r => `${String(r.date || '').slice(0, 16).replace('T', ' ')} · ${r.count || 0}/${r.total || 0} · ${String(r.message || '').slice(0, 70)}`,

@@ -195,6 +195,7 @@ async function vForm(col, c, id, s, ctx) {
           if (isNew && col === 'payments') { out.receipt = 'RCT-' + Date.now().toString(36).toUpperCase().slice(-6); out.enteredBy = s.name; }
           if (col === 'birthdays') { if (+out.day < 1 || +out.day > 31) throw new Error('Enter a day between 1 and 31.'); bdFix(out); out.key = out.key || norm(out.name); }
           const wasNew = isNew; let smsDone = false; const saved = await data.save(col, out);
+          if (col === 'students' && out.photo) await data.setUserPic({ regNo: out.reg_no, name: out.name, role: 'student', photo: out.photo }).catch(() => {});
           if (col === 'staff') { const md = out.birthMonth && out.birthDay ? pad2(out.birthMonth) + '-' + pad2(out.birthDay) : ''; if (md) await data.saveBirthday({ id: 'bd-staff-' + saved.id, key: saved.id, name: out.name, kind: 'Teacher', class: out.role, md, photo: out.photo }); }
           if (col === 'announcements' && wasNew && out.sms && ['all', 'parents'].includes(out.audience)) {
             smsDone = true;

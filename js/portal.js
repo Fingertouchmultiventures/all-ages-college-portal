@@ -11,6 +11,9 @@ async function myStudents(s) {
   return all.filter(x => regs.includes(norm(x.reg_no)));
 }
 const isImg = f => f && String(f.type || '').startsWith('image/') || (f && /\.(jpe?g|png|webp|gif)$/i.test(f.name || f.url || ''));
+const av = (photo, name, cls = '') => photo && (photo.url || photo.path || photo.fid) ? `<img class="av ${cls}" ${data.fileAttr(photo, 'src')} alt="${esc(name || '')}" loading="lazy">` : `<span class="av av-ini ${cls}" aria-hidden="true">${esc(initials(name))}</span>`;
+export const profileBadge = async s => { const A = await data.avatars(); const ph = data.picOf(A, { userId: s.id, regNo: s.reg_no, name: s.name }); return `<div class="meprof">${av(ph, s.name, 'av-lg')}<div><b>${esc(s.name)}</b><br><label class="btn btn-ghost btn-sm" style="margin-top:6px;cursor:pointer">${ic('plus')} ${ph ? 'Change my picture' : 'Add my picture'}<input type="file" id="mePic" accept="image/*" hidden></label><span class="hint" id="mePicMsg"></span></div></div>`; };
+export function bindProfileBadge(s) { const i = $('#mePic'); if (!i) return; i.onchange = async () => { if (!i.files[0]) return; $('#mePicMsg').textContent = ' Saving…'; try { const f = await data.uploadFile(i.files[0], 'portfolio'); await data.setUserPic({ userId: s.id, regNo: s.reg_no, name: s.name, role: s.role, photo: f }); toast('Picture saved'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { $('#mePicMsg').textContent = ' ' + (e.message || 'Could not save'); } }; }
 const initials = n => String(n || '?').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
 
 /* ---------- prefects ---------- */
@@ -440,7 +443,7 @@ export async function vAbout() {
 /* ---------- accounts (admin) ---------- */
 export async function vAccounts() {
   const live = data.isLive; const r = live ? await data.adminUsers({ action: 'list' }) : { users: [] };
-  const users = (r.users || []).sort((a, b) => String(a.role).localeCompare(b.role) || String(a.full_name).localeCompare(b.full_name));
+  const AVA = await data.avatars(); const users = (r.users || []).sort((a, b) => String(a.role).localeCompare(b.role) || String(a.full_name).localeCompare(b.full_name));
   const rl = { admin: 'Admin', teacher: 'Teacher', bursar: 'Bursar', student: 'Student', parent: 'Parent / Payment' };
   return { title: 'Accounts', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Admin</p><h1 class="h1">Accounts and passwords</h1>
     ${live ? '' : '<div class="card" style="margin-top:16px"><p style="margin:0"><b>Demo mode.</b> Accounts can be created after the site is live. For now every portal accepts <b>demo</b> / <b>demo1234</b>.</p></div>'}
@@ -449,6 +452,7 @@ export async function vAccounts() {
       ${selectField({ id: 'role', label: 'Who is it for?', options: Object.entries(rl).map(([k, v]) => opt(k, '', v)).join('') })}
       ${field({ id: 'full_name', label: 'Full name' })}
       ${field({ id: 'identifier', label: 'Sign-in ID', hint: 'Student: reg. number. Parent: phone number. Staff: staff ID or email.', extra: 'autocapitalize="none" spellcheck="false"' })}
+      <div class="field"><label for="acPhoto">Profile picture <span class="opt">(optional)</span></label><input class="input" id="acPhoto" type="file" accept="image/*"></div>
       <div id="regWrap" hidden>${field({ id: 'linked_regs', label: "Child's reg. number(s)", required: false, hint: 'Parent: separate several children with a comma. Must match the reg. number in Students.' })}</div>
       <div class="field" data-field="password"><label for="password">Password</label><div class="pw"><input class="input" id="password" name="password" type="text" required minlength="6" data-msg="At least 6 characters" aria-describedby="password-e"><button type="button" id="gen">Generate</button></div><span class="hint">Write it down and give it to the person. They sign in with the ID above and this password.</span><span class="error" id="password-e" role="alert"></span></div>
       <div id="acErr" class="error" role="alert"></div><div id="acOk" class="ok-box" hidden></div>
@@ -459,7 +463,7 @@ export async function vAccounts() {
       <div class="field"><label for="acfile">CSV file</label><input class="input" id="acfile" type="file" accept=".csv,text/csv" ${live ? '' : 'disabled'}></div><div id="acbp" class="hint" role="status"></div><div class="error" id="acberr" role="alert"></div>
       <button class="btn" id="acbgo" type="button" disabled>Create accounts</button><div id="acbout"></div></div>
     <h2 class="h2s" style="margin-top:28px">${ic('people')} Existing accounts (${users.length})</h2>
-    <ul class="mlist">${users.map(u => `<li class="mrow"><div class="mrow-main"><b>${esc(u.full_name || u.email)}</b><span>${esc(rl[u.role] || u.role)} · ${esc(u.email)}${u.reg_no ? ' · ' + esc(u.reg_no) : ''}${(u.linked_regs || []).length ? ' · ' + esc(u.linked_regs.join(', ')) : ''}</span></div>
+    <ul class="mlist">${users.map(u => `<li class="mrow">${av(data.picOf(AVA, { userId: u.id, regNo: u.reg_no, name: u.full_name }), u.full_name || u.email)}<div class="mrow-main"><b>${esc(u.full_name || u.email)}</b><span>${esc(rl[u.role] || u.role)} · ${esc(u.email)}${u.reg_no ? ' · ' + esc(u.reg_no) : ''}${(u.linked_regs || []).length ? ' · ' + esc(u.linked_regs.join(', ')) : ''}</span></div>
       <div class="mrow-actions"><button class="btn btn-ghost btn-sm" data-reset="${esc(u.id)}" data-name="${esc(u.full_name || u.email)}" type="button">Reset password</button><button class="btn btn-ghost btn-sm" data-del="${esc(u.id)}" data-name="${esc(u.full_name || u.email)}" type="button" aria-label="Delete ${esc(u.full_name || u.email)}">${ic('trash')}</button></div></li>`).join('') || '<li class="hint">No accounts yet.</li>'}</ul>`,
     bind() {
       const gen = () => Array.from({ length: 8 }, () => 'abcdefghjkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 31)]).join('');
@@ -468,6 +472,8 @@ export async function vAccounts() {
       $('#acForm').onsubmit = async e => { e.preventDefault(); const f = e.currentTarget; if (!validate(f)) return; $('#acErr').textContent = '';
         const res = await data.adminUsers({ action: 'create', role: f.role.value, full_name: f.full_name.value.trim(), identifier: f.identifier.value.trim(), linked_regs: f.linked_regs ? f.linked_regs.value : '', password: f.password.value });
         if (res.error) { $('#acErr').textContent = res.error; return; }
+        const pf = $('#acPhoto').files[0];
+        if (pf) { try { const ph = await data.uploadFile(pf, 'portfolio'); const lst = await data.adminUsers({ action: 'list' }); const u = (lst.users || []).find(x => x.email === res.email); await data.setUserPic({ userId: u && u.id, regNo: f.role.value === 'student' ? f.identifier.value.trim() : '', name: f.full_name.value.trim(), role: f.role.value, photo: ph }); } catch { /* picture is optional */ } }
         const ok = $('#acOk'); ok.hidden = false; ok.innerHTML = `Account created. Sign-in ID: <b>${esc(f.identifier.value)}</b> &middot; Password: <b>${esc(f.password.value)}</b> &middot; Portal: <b>${esc(rl[f.role.value])}</b>`; f.reset(); $('#regWrap').hidden = true; };
       $('#actpl').onclick = () => download('accounts-template.csv', 'role,identifier,full_name,password,linked_regs\nstudent,AAC/2026/101,Ada Okafor,,\nparent,08012345678,Mrs Okafor,,AAC/2026/101');
       let bulk = [];
@@ -562,8 +568,8 @@ async function markAttendance(kind, ref, title, s) {
   } catch { /* attendance is best-effort */ }
 }
 async function attendancePanel(kind, ref) {
-  const rows = (await data.list('attendance')).filter(a => a.ref === ref).sort((a, b) => String(a.time).localeCompare(String(b.time)));
-  return `<div class="card" style="margin-top:14px"><h2 class="h2s">${ic('people')} Who has joined (${rows.length})</h2><ul class="mlist">${rows.map(a => `<li class="mrow"><div class="mrow-main"><b>${esc(a.name)}</b><span>${esc(a.role)}${a.regNo ? ' · ' + esc(a.regNo) : ''} · ${esc(String(a.time).slice(11, 16))}</span></div></li>`).join('') || '<li class="mrow"><span class="hint">Nobody has joined yet.</span></li>'}</ul>
+  const rows = (await data.list('attendance')).filter(a => a.ref === ref).sort((a, b) => String(a.time).localeCompare(String(b.time))); const AV = await data.avatars();
+  return `<div class="card" style="margin-top:14px"><h2 class="h2s">${ic('people')} Who has joined (${rows.length})</h2><ul class="mlist">${rows.map(a => `<li class="mrow">${av(data.picOf(AV, { userId: a.userId, regNo: a.regNo, name: a.name }), a.name)}<div class="mrow-main"><b>${esc(a.name)}</b><span>${esc(a.role)}${a.regNo ? ' · ' + esc(a.regNo) : ''} · ${esc(String(a.time).slice(11, 16))}</span></div></li>`).join('') || '<li class="mrow"><span class="hint">Nobody has joined yet.</span></li>'}</ul>
     ${rows.length ? `<button class="btn btn-ghost btn-sm" id="attDl" type="button" style="margin-top:8px">${ic('download')} Download attendance</button>` : ''}</div>`;
 }
 const jitsiSrc = (room, name) => `https://meet.jit.si/${room}#userInfo.displayName=%22${encodeURIComponent(name)}%22&config.prejoinConfig.enabled=true&config.disableDeepLinking=true&config.startWithVideoMuted=false&config.startWithAudioMuted=true&interfaceConfig.MOBILE_APP_PROMO=false`;
@@ -698,7 +704,8 @@ export async function vRoom(id, s) {
   const wk = weekly.find(w => 'weekly-' + w.id === id); const isCustom = id.startsWith('rm-'); const joined = members.some(m => m.room === id && m.userId === s.id);
   const tops = posts.filter(p => p.kind !== 'reply').sort((a, b) => String(b._created).localeCompare(String(a._created))); const reps = posts.filter(p => p.kind === 'reply');
   const canDel = p => p.authorId === s.id || ['admin', 'teacher'].includes(s.role);
-  const msg = p => `<div class="post"><div class="row-between"><b>${esc(p.authorName || 'Member')} <small class="hint">${esc(p.role || '')}${p.class ? ' · ' + esc(p.class) : ''}</small></b><small class="hint">${fmtDate(p._created)}</small></div>${p.title ? `<h3 style="margin:4px 0">${esc(p.title)}</h3>` : ''}<p style="white-space:pre-wrap;margin:6px 0">${esc(p.body)}</p>
+  const AV = await data.avatars();
+  const msg = p => `<div class="post"><div class="row-between"><b style="display:flex;align-items:center;gap:8px">${av(data.picOf(AV, { userId: p.authorId, name: p.authorName }), p.authorName)}<span>${esc(p.authorName || 'Member')} <small class="hint">${esc(p.role || '')}${p.class ? ' · ' + esc(p.class) : ''}</small></span></b><small class="hint">${fmtDate(p._created)}</small></div>${p.title ? `<h3 style="margin:4px 0">${esc(p.title)}</h3>` : ''}<p style="white-space:pre-wrap;margin:6px 0">${esc(p.body)}</p>
     ${p.file ? (isImg(p.file) ? `<img class="ann-img" ${data.fileAttr(p.file, 'src')} alt="" loading="lazy">` : `<a class="link" ${data.fileAttr(p.file)} target="_blank" rel="noopener">${ic('file')} ${esc(p.file.name || 'File')}</a>`) : ''}${canDel(p) ? ` <button class="btn btn-ghost btn-sm" data-delp="${esc(p.id)}" type="button" aria-label="Delete">${ic('trash')}</button>` : ''}</div>`;
   const back = id.startsWith('weekly-') ? '#/p/weekly' : id === 'room-pta' ? '#/p/pta' : '#/p/community';
   const needJoin = isCustom && !joined && s.role !== 'admin' && s.role !== 'teacher';
