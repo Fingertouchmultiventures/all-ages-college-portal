@@ -537,6 +537,37 @@ export async function vActivity(slug) {
 }
 
 /* ---------- live classes ---------- */
+
+/* ---------- webcam check, attendance, video frame (live classes and PTA) ---------- */
+const camPanel = () => `<div class="card cam" style="margin-top:14px"><div class="row-between"><h2 class="h2s">${ic('monitor')} Check my camera and microphone</h2><button class="btn btn-ghost btn-sm" id="camTest" type="button">Test now</button></div>
+  <p class="hint" style="margin:6px 0 0">Press Test, then Allow when your browser asks. You should see yourself and the green bar should move when you speak.</p>
+  <div id="camBox" hidden><video id="camVid" class="camvid" autoplay muted playsinline></video><div class="meter"><i id="camLvl"></i></div><p class="hint" id="camMsg"></p></div></div>`;
+function bindCam() {
+  const b = $('#camTest'); if (!b) return; let stream, raf, ctx;
+  const stop = () => { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; cancelAnimationFrame(raf); try { ctx && ctx.close(); } catch { /* ignore */ } $('#camBox').hidden = true; b.textContent = 'Test now'; };
+  b.onclick = async () => {
+    if (stream) return stop();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { $('#camBox').hidden = false; $('#camMsg').textContent = 'This browser cannot use the camera here. Try Chrome or Safari, over a secure (https) link.'; return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); $('#camBox').hidden = false; $('#camVid').srcObject = stream; b.textContent = 'Stop test'; $('#camMsg').textContent = 'Camera and microphone work. You can join now.';
+      ctx = new (window.AudioContext || window.webkitAudioContext)(); const an = ctx.createAnalyser(); ctx.createMediaStreamSource(stream).connect(an); const buf = new Uint8Array(an.frequencyBinCount);
+      const tick = () => { an.getByteFrequencyData(buf); const v = buf.reduce((a, c) => a + c, 0) / buf.length; $('#camLvl').style.width = Math.min(100, v * 2.2) + '%'; raf = requestAnimationFrame(tick); }; tick();
+    } catch (e) { $('#camBox').hidden = false; $('#camMsg').textContent = e && e.name === 'NotAllowedError' ? 'Permission was blocked. Tap the camera icon in the address bar, choose Allow, then test again.' : 'No camera or microphone was found, or another app is using it.'; }
+  };
+  window.addEventListener('hashchange', stop, { once: true });
+}
+async function markAttendance(kind, ref, title, s) {
+  if (!s) return; try {
+    await data.save('attendance', { id: `att-${ref}-${String(s.id || s.name).replace(/[^A-Za-z0-9]/g, '')}`, kind, ref, title, userId: s.id || '', name: s.name || '', role: s.role, regNo: s.reg_no || '', date: new Date().toISOString().slice(0, 10), time: new Date().toISOString() });
+  } catch { /* attendance is best-effort */ }
+}
+async function attendancePanel(kind, ref) {
+  const rows = (await data.list('attendance')).filter(a => a.ref === ref).sort((a, b) => String(a.time).localeCompare(String(b.time)));
+  return `<div class="card" style="margin-top:14px"><h2 class="h2s">${ic('people')} Who has joined (${rows.length})</h2><ul class="mlist">${rows.map(a => `<li class="mrow"><div class="mrow-main"><b>${esc(a.name)}</b><span>${esc(a.role)}${a.regNo ? ' · ' + esc(a.regNo) : ''} · ${esc(String(a.time).slice(11, 16))}</span></div></li>`).join('') || '<li class="mrow"><span class="hint">Nobody has joined yet.</span></li>'}</ul>
+    ${rows.length ? `<button class="btn btn-ghost btn-sm" id="attDl" type="button" style="margin-top:8px">${ic('download')} Download attendance</button>` : ''}</div>`;
+}
+const jitsiSrc = (room, name) => `https://meet.jit.si/${room}#userInfo.displayName=%22${encodeURIComponent(name)}%22&config.prejoinConfig.enabled=true&config.disableDeepLinking=true&config.startWithVideoMuted=false&config.startWithAudioMuted=true&interfaceConfig.MOBILE_APP_PROMO=false`;
+const videoFrame = (title, room, name) => `<iframe class="liveframe" title="${esc(title)}" allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write" src="${jitsiSrc(room, name)}"></iframe><p class="hint">Allow your camera and microphone when asked. The free video service may limit long sessions; if the video does not load or stops, use "Open in a new tab".</p>`;
 export async function vLive(s) {
   const mine = await myStudents(s); const classes = [...new Set(mine.map(x => x.class))]; const staff = s && ['admin', 'teacher'].includes(s.role);
   const all = (await data.list('liveclasses')).filter(x => staff || !classes.length || classes.includes(x.class)).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
@@ -555,15 +586,21 @@ export async function vLiveRoom(id, s) {
   const q = (lc.noteTitle || lc.title || '').toLowerCase();
   const match = [...nbs, ...lns].filter(n => n.class === lc.class && (!lc.subject || n.subject === lc.subject) && (n.title || '').toLowerCase().includes(q.slice(0, 40)) && q);
   const room = 'AllAgesCollege-' + String(lc.id).replace(/[^A-Za-z0-9]/g, '').slice(-20); const name = encodeURIComponent((s && s.name) || 'Guest');
+  const staffV = s && ['admin', 'teacher'].includes(s.role); await markAttendance('live', lc.id, lc.title, s);
+  const [asg, tst] = await Promise.all([data.list('assignments'), data.list('tests')]); const res = [...asg.map(x => ({ ...x, t: 'Assignment', h: '#/p/assignments' })), ...tst.map(x => ({ ...x, t: 'Test', h: '#/p/tests' }))].filter(x => x.class === lc.class && (!lc.subject || x.subject === lc.subject)).slice(0, 6);
+  const attHtml = staffV ? await attendancePanel('live', lc.id) : '';
   const link = lc.link || `https://meet.jit.si/${room}`; const key = 'aac.mynotes.' + lc.id; let mine = ''; try { mine = localStorage.getItem(key) || ''; } catch { /* ignore */ }
   return { title: lc.title, nav: 'home', wide: true, html: `<div class="sect" style="padding-top:12px"><a class="back" href="#/p/live">${ic('back')} Live classes</a>
     <div class="row-between"><div><p class="eyebrow">${esc(lc.class)} · ${esc(lc.subject)}</p><h1 class="h1" style="font-size:26px">${esc(lc.title)}</h1></div><a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${ic('monitor')} Open video class in a new tab</a></div>
-    <div class="liveg"><section>${lc.link ? `<div class="card"><p>This class uses its own meeting link. Press the button above to join, then come back to this page to follow the lesson note.</p></div>` : `<iframe class="liveframe" title="Live class video" allow="camera; microphone; fullscreen; display-capture" src="https://meet.jit.si/${room}#userInfo.displayName=%22${name}%22"></iframe><p class="hint">If the video does not load here, use the button above.</p>`}
+    <div class="liveg"><section>${lc.link ? `<div class="card"><p>This class uses its own meeting link. Press the button above to join, then come back to this page to follow the lesson note.</p></div>` : `${videoFrame('Live class video', room, (s && s.name) || 'Guest')}`}
       <div class="card" style="margin-top:14px"><h2 class="h2s">${ic('book')} My notebook (write while the teacher explains)</h2><textarea class="input" id="mynote" rows="9" placeholder="Type your notes here. They are saved on this device.">${esc(mine)}</textarea>
       <div class="row-between" style="margin-top:10px;justify-content:flex-start;gap:10px"><button class="btn btn-ghost btn-sm" id="dlnote" type="button">${ic('download')} Download my notes</button><span class="hint" id="nsaved"></span></div></div></section>
     <aside><div class="card"><h2 class="h2s">${ic('list')} Today's note</h2>${match.length ? match.map(n => `<div class="nb"><h3 style="margin:8px 0">${esc(n.title)}</h3>${mdToHtml(n.body)}${n.file ? `<p><a class="link" ${data.fileAttr(n.file)} target="_blank" rel="noopener">${ic('file')} ${esc(n.file.name || 'File')}</a></p>` : ''}</div>`).join('<hr>') : `<p class="hint">No lesson note or notebook is linked to this class yet. ${s && ['admin', 'teacher'].includes(s.role) ? 'Add one in Notebooks with the same class, subject and topic, then type the topic in the class setup.' : 'Your teacher will share it.'}</p>`}
-      ${lc.info ? `<p class="hint">${esc(lc.info)}</p>` : ''}</div></aside></div></div>`,
+      ${lc.info ? `<p class="hint">${esc(lc.info)}</p>` : ''}</div>
+      <div class="card" style="margin-top:14px"><h2 class="h2s">${ic('task')} Class work for this subject</h2><ul class="mlist">${res.map(x => `<li class="mrow"><div class="mrow-main"><b>${esc(x.title)}</b><span>${x.t}${x.due || x.date ? ' · ' + esc(fmtDate(x.due || x.date)) : ''}</span></div><a class="btn btn-ghost btn-sm" href="${x.h}">Open</a></li>`).join('') || '<li class="mrow"><span class="hint">No assignment or test yet.</span></li>'}</ul></div>
+      ${camPanel()}${attHtml}</aside></div></div>`,
     bind() {
+      bindCam(); if ($('#attDl')) bindAttDl(lc.title);
       const ta = $('#mynote'); let t; ta.oninput = () => { clearTimeout(t); t = setTimeout(() => { try { localStorage.setItem(key, ta.value); $('#nsaved').textContent = 'Saved'; } catch { $('#nsaved').textContent = 'Could not save on this device'; } }, 500); };
       $('#dlnote').onclick = () => download(`my-notes-${lc.subject}-${lc.title}.txt`.replace(/\s+/g, '-'), `${lc.class} · ${lc.subject} · ${lc.title}\n\n${ta.value}`);
     } };
@@ -687,7 +724,7 @@ export async function vPTA(s) {
   const up = meets.filter(m => (m.date || '') >= t).sort((a, b) => String(a.date).localeCompare(b.date)); const past = meets.filter(m => (m.date || '') < t).sort((a, b) => String(b.date).localeCompare(a.date));
   const card = m => { const room = 'AllAgesPTA-' + String(m.id).replace(/[^A-Za-z0-9]/g, '').slice(-16); const virtual = /virtual|both/i.test(m.mode || ''); const link = m.link || (virtual ? `https://meet.jit.si/${room}` : '');
     return `<article class="card cur"><div class="row-between"><h3>${esc(m.title)}</h3><span class="pill pill-blue">${esc(m.mode || 'Physical')}</span></div><p class="hint">${esc(fmtDate(m.date))} ${esc(m.time || '')}${m.venue ? ' · ' + esc(m.venue) : ''}</p>${m.agenda ? `<p style="white-space:pre-wrap">${esc(m.agenda)}</p>` : ''}
-      <div class="row-between" style="justify-content:flex-start;gap:8px">${link ? `<a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${ic('monitor')} Join online meeting</a>` : ''}${m.minutes ? `<a class="btn btn-ghost btn-sm" ${data.fileAttr(m.minutes)} target="_blank" rel="noopener">${ic('file')} Minutes</a>` : ''}</div></article>`; };
+      <div class="row-between" style="justify-content:flex-start;gap:8px">${virtual && !m.link ? `<a class="btn btn-sm" href="#/pta-room/${encodeURIComponent(m.id)}">${ic('monitor')} Join with webcam</a>` : link ? `<a class="btn btn-sm" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${ic('monitor')} Join online meeting</a>` : ''}${m.minutes ? `<a class="btn btn-ghost btn-sm" ${data.fileAttr(m.minutes)} target="_blank" rel="noopener">${ic('file')} Minutes</a>` : ''}</div></article>`; };
   const people = mem.sort((a, b) => String(a.type).localeCompare(b.type));
   const grp = (title, L) => L.length ? `<h3 class="fsec">${title}</h3><ul class="pf-row" style="flex-wrap:wrap">${L.map(p => `<li class="pf" style="flex:0 0 150px">${p.photo ? `<img class="pf-img" ${data.fileAttr(p.photo, 'src')} alt="${esc(p.name)}" loading="lazy">` : `<span class="pf-img pf-ini">${esc(initials(p.name))}</span>`}<b>${esc(p.name)}</b><span class="pf-pos">${esc(p.role)}</span></li>`).join('')}</ul>` : '';
   return { title: 'PTA', nav: 'home', html: `<a class="back" href="#/dashboard">${ic('back')} Dashboard</a><p class="eyebrow">Parents and teachers</p><h1 class="h1">PTA</h1>
@@ -768,4 +805,17 @@ export async function vAlerts(s) {
     <form class="card" id="refForm" style="margin-top:18px"><div class="field" style="margin-top:0"><label for="refIn">Have a reference number from another phone?</label><input class="input" id="refIn" placeholder="Example: FB-1A2B3C4D"></div><button class="btn btn-navy btn-sm" style="margin-top:12px" type="submit">Track it</button></form>`,
     bind() { const n = aSeen(); alerts.forEach(a => { n[a.key] = 1; }); try { localStorage.setItem('aac.alertseen', JSON.stringify(n)); } catch { /* ignore */ } data.markRepliesSeen(replies); window.dispatchEvent(new Event('aac:replies'));
       $('#refForm').onsubmit = e => { e.preventDefault(); data.trackRef($('#refIn').value); window.dispatchEvent(new HashChangeEvent('hashchange')); }; } };
+}
+
+function bindAttDl(title) { const b = $('#attDl'); if (!b) return; b.onclick = () => { const rows = [...document.querySelectorAll('.mlist li .mrow-main')].map(x => x.textContent); download(`attendance-${title}.txt`.replace(/\s+/g, '-'), rows.join('\n')); }; }
+export async function vPtaRoom(id, s) {
+  const m = (await data.list('ptameetings')).find(x => x.id === id);
+  if (!m) return { title: 'PTA meeting', nav: 'home', html: `<a class="back" href="#/p/pta">${ic('back')} PTA</a><p>That meeting was not found.</p>` };
+  await markAttendance('pta', m.id, m.title, s); const room = 'AllAgesPTA-' + String(m.id).replace(/[^A-Za-z0-9]/g, '').slice(-16);
+  const att = s && ['admin', 'teacher'].includes(s.role) ? await attendancePanel('pta', m.id) : '';
+  return { title: m.title, nav: 'home', wide: true, html: `<div class="sect" style="padding-top:12px"><a class="back" href="#/p/pta">${ic('back')} PTA</a>
+    <div class="row-between"><div><p class="eyebrow">PTA meeting · ${esc(fmtDate(m.date))} ${esc(m.time || '')}</p><h1 class="h1" style="font-size:26px">${esc(m.title)}</h1></div><a class="btn btn-sm" href="https://meet.jit.si/${room}" target="_blank" rel="noopener noreferrer">${ic('monitor')} Open in a new tab</a></div>
+    <div class="liveg"><section>${videoFrame('PTA video meeting', room, (s && s.name) || 'Guest')}</section>
+    <aside>${m.agenda ? `<div class="card"><h2 class="h2s">${ic('list')} Agenda</h2><p style="white-space:pre-wrap;margin:0">${esc(m.agenda)}</p></div>` : ''}<p style="margin:14px 0"><a class="btn btn-ghost btn-sm" href="#/room/room-pta">${ic('people')} PTA forum</a></p>${camPanel()}${att}</aside></div></div>`,
+    bind() { bindCam(); bindAttDl(m.title); } };
 }

@@ -285,6 +285,7 @@ async function render() {
       else if (a === 'fees') v = await pt.vFees(s);
       else if (a === 'debtors') v = ['admin', 'bursar'].includes(s.role) ? await pt.vDebtors(s) : null;
     }
+    else if (route === 'pta-room') v = s ? await pt.vPtaRoom(a, s) : need();
     else if (route === 'live') v = s ? await pt.vLiveRoom(a, s) : need();
     else if (route === 'room') v = s ? await pt.vRoom(a, s) : need();
     else if (route === 'celebrations') v = await pt.vCelebrations();

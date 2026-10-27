@@ -368,3 +368,6 @@ body.wide #view{max-width:1180px;padding-top:0}
 .bslide{padding:22px 56px;color:var(--navy,#14204f)}
 .bslide .atext,.bslide .atext h3,.bslide .atext p{color:var(--navy,#14204f)}
 .bslide .atext p{opacity:.85}
+
+.camvid{width:100%;max-width:360px;border-radius:14px;background:#0F1A47;margin-top:10px;transform:scaleX(-1)}
+.meter{height:8px;border-radius:99px;background:#e5e8f3;max-width:360px;margin-top:8px;overflow:hidden}.meter i{display:block;height:100%;width:0;background:#16a34a;transition:width .08s}
