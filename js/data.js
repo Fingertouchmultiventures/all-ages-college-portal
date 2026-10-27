@@ -363,3 +363,28 @@ export async function adminUsers(body) {
     return await r.json();
   } catch { return { error: 'Could not reach the account service. Check that the admin-users function is deployed.' }; }
 }
+
+/* ---------- SMS to parents (admin only) ---------- */
+export const normPhone = p => { const d = String(p || '').replace(/\D/g, ''); if (/^234\d{10}$/.test(d)) return d; if (/^0\d{10}$/.test(d)) return '234' + d.slice(1); if (/^[789]\d{9}$/.test(d)) return '234' + d; return ''; };
+// Unique parent numbers for a list of students. Returns { phones, students, skipped }.
+export function parentPhones(students) {
+  const phones = new Set(); const skipped = [];
+  for (const st of students) { const n = normPhone(st.parentPhone); if (n) phones.add(n); else skipped.push(st); }
+  return { phones: [...phones], skipped };
+}
+export async function sendSms({ phones, message, label, by }) {
+  phones = [...new Set(phones.map(normPhone).filter(Boolean))];
+  if (!phones.length) throw new Error('No valid parent phone numbers in this selection.');
+  let res;
+  if (!isLive) res = { ok: true, sent: phones.length, total: phones.length, demo: true };
+  else {
+    const c = await sb(); const { data: s } = await c.auth.getSession();
+    try {
+      const r = await fetch(`${BASE}/functions/v1/send-sms`, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + (s.session ? s.session.access_token : '') }, body: JSON.stringify({ phones, message }) });
+      res = await r.json();
+    } catch { res = { error: 'Could not reach the SMS service. Check that the send-sms function is deployed.' }; }
+  }
+  const status = res.demo ? 'Demo (not sent)' : res.notConfigured ? 'Not sent: SMS not switched on' : res.error ? (res.sent ? 'Partly sent' : 'Failed') : 'Sent';
+  try { await save('smslog', { label: label || 'Message', message, count: res.sent || 0, total: phones.length, status, error: res.error || '', date: new Date().toISOString(), by: by || '' }); } catch { /* log is best-effort */ }
+  return { ...res, status };
+}

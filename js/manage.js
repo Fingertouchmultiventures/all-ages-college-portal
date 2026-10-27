@@ -28,6 +28,7 @@ export function hubTiles(s) {
 export async function vManage(col, sub, s) {
   if (!allowed(col, s)) return null;
   const c = COLS[col]; const ctx = await loadCtx(c);
+  if (col === 'sms') return vSms(s);
   if (c.single) return vForm(col, c, c.single, s, ctx);
   if (sub === 'new' && !c.noCreate) return vForm(col, c, null, s, ctx);
   if (sub) return vForm(col, c, sub, s, ctx);
@@ -188,9 +189,17 @@ async function vForm(col, c, id, s, ctx) {
           if (col === 'students') out.reg_norm = norm(out.reg_no);
           if (isNew && ['lessonNotes', 'notebooks', 'assignments', 'tests', 'liveclasses', 'questions'].includes(col)) { out.owner = s.id; out.teacherName = s.name; }
           if (isNew && col === 'payments') { out.receipt = 'RCT-' + Date.now().toString(36).toUpperCase().slice(-6); out.enteredBy = s.name; }
-          await data.save(col, out);
+          const wasNew = isNew; let smsDone = false; await data.save(col, out);
+          if (col === 'announcements' && wasNew && out.sms && ['all', 'parents'].includes(out.audience)) {
+            smsDone = true;
+            try {
+              const sts = await data.list('students'); const { phones } = data.parentPhones(sts);
+              const r = await data.sendSms({ phones, message: `All Ages College: ${out.title}. ${out.body}`.slice(0, 450), label: 'Announcement: ' + out.title, by: s.name });
+              toast(r.error ? 'Announcement saved. SMS: ' + r.error : `Announcement saved and texted to ${r.sent} parent number(s)`);
+            } catch (e2) { toast('Announcement saved. SMS not sent: ' + e2.message); }
+          }
           if (col === 'settings') { await data.getSettings(true); window.dispatchEvent(new Event('aac:settings')); }
-          toast('Saved');
+          if (!smsDone) toast('Saved');
           if (c.single) { btn.disabled = false; btn.textContent = 'Save'; } else location.hash = `#/manage/${col}`;
         } catch (err) { btn.disabled = false; btn.textContent = 'Save'; $('#mErr').textContent = err.message || 'Could not save. Try again.'; }
       };
@@ -329,5 +338,61 @@ async function loginsPanel() {
       out.push([a.role, a.id, a.name, pw, r.error ? 'FAILED: ' + r.error : 'Created']); }
     download('new-logins.csv', toCsv([['Role', 'Sign-in ID', 'Name', 'Password', 'Result'], ...out]));
     $('#lgout').textContent = `${out.filter(o => o[4] === 'Created').length} created, ${out.filter(o => o[4] !== 'Created').length} failed. The list with passwords has been downloaded: print it and give each family their login.`;
+  };
+}
+
+
+/* ---------- message parents by SMS ---------- */
+async function vSms(s) {
+  const students = (await data.list('students')).sort((a, b) => a.name.localeCompare(b.name));
+  const log = (await data.list('smslog')).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 25);
+  const classes = [...new Set(students.map(x => x.class).filter(Boolean))];
+  const TPL = [['Fees reminder', 'Dear Parent, this is a reminder that school fees for the term are due. Please pay at the school or through the portal. Thank you. All Ages College.'],
+    ['School closes / resumes', 'Dear Parent, school closes on [date] and resumes on [date]. Please ensure your child is present and in full uniform. All Ages College.'],
+    ['PTA meeting', 'Dear Parent, there will be a PTA meeting on [date] at [time] ([venue or online]). Your attendance is important. All Ages College.'],
+    ['Emergency', 'Dear Parent, please call the school on 08057394188 as soon as you receive this message. All Ages College.']];
+  return {
+    title: 'Message parents', nav: 'home', html: `
+    <a class="back" href="#/dashboard">${ic('back')} Dashboard</a>
+    <p class="eyebrow">Manage</p><h1 class="h1">Message parents (SMS)</h1>
+    <div class="card" style="margin-top:14px"><p class="hint" style="margin:0">Texts go straight to the parent phone numbers saved on each student, the moment you press Send. Brothers and sisters with the same parent phone get one text. You can also tick <b>"Also text this to all parents"</b> when adding an announcement.</p></div>
+    <form class="card" id="smsf" style="margin-top:14px" novalidate>
+      <div class="field"><label for="smsAud">Send to</label><select class="input" id="smsAud"><option value="all">All parents</option>${classes.length ? '<option value="class">Parents of one class</option>' : ''}<option value="pick">Parents of chosen students</option></select></div>
+      <div class="field" id="smsClsW" hidden><label for="smsCls">Class</label><select class="input" id="smsCls">${classes.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>
+      <div class="field" id="smsPickW" hidden><label for="smsQ">Choose students</label><input class="input" id="smsQ" type="search" placeholder="Search by name or ID">
+        <ul class="mlist" id="smsPick" style="max-height:220px;overflow:auto;margin-top:8px">${students.map(x => `<li class="mrow"><input type="checkbox" class="smsp" value="${esc(x.id)}" aria-label="${esc(x.name)}"><div class="mrow-main"><b>${esc(x.name)}</b><span>${esc(x.class || '')} · ${esc(x.reg_no || '')} · ${esc(x.parentPhone || 'no parent phone')}</span></div></li>`).join('') || '<li class="mrow"><span class="hint">No students yet.</span></li>'}</ul></div>
+      <div class="field"><label for="smsT">Quick message</label><select class="input" id="smsT"><option value="">Choose a template (optional)</option>${TPL.map((t, i) => `<option value="${i}">${esc(t[0])}</option>`).join('')}</select></div>
+      <div class="field"><label for="smsM">Message</label><textarea class="input" id="smsM" maxlength="450" required placeholder="Type your message to parents"></textarea><span class="hint" id="smsN"></span></div>
+      <div id="smsE" class="error" role="alert"></div>
+      <div class="row-between" style="margin-top:14px"><button class="btn" type="submit" id="smsGo">${ic('mail')} Send now</button><span class="hint" id="smsSum"></span></div>
+    </form>
+    <h2 class="h2" style="margin-top:26px">Sent messages</h2>
+    <ul class="mlist">${log.map(r => `<li class="mrow"><span class="mthumb mthumb-ic">${ic('mail')}</span><div class="mrow-main"><b>${esc(r.label || 'Message')} · ${esc(r.status || '')}</b><span>${esc(String(r.date || '').slice(0, 16).replace('T', ' '))} · ${r.count || 0} of ${r.total || 0} numbers · ${esc(String(r.message || '').slice(0, 90))}</span></div></li>`).join('') || '<li class="mrow"><span class="hint">Nothing sent yet.</span></li>'}</ul>`,
+    bind() {
+      const aud = $('#smsAud'), m = $('#smsM');
+      const chosen = () => aud.value === 'all' ? students : aud.value === 'class' ? students.filter(x => x.class === $('#smsCls').value) : students.filter(x => [...document.querySelectorAll('.smsp:checked')].some(c => c.value === x.id));
+      const upd = () => {
+        $('#smsClsW').hidden = aud.value !== 'class'; $('#smsPickW').hidden = aud.value !== 'pick';
+        const { phones, skipped } = data.parentPhones(chosen());
+        $('#smsSum').textContent = `${phones.length} parent number(s)${skipped.length ? ` · ${skipped.length} student(s) have no valid parent phone` : ''}`;
+        const n = m.value.length; $('#smsN').textContent = `${n}/450 characters · about ${Math.max(1, Math.ceil(n / 153))} SMS page(s) per number`;
+      };
+      ['change', 'input'].forEach(ev => $('#smsf').addEventListener(ev, upd)); upd();
+      $('#smsT').onchange = e => { if (e.target.value !== '') { m.value = TPL[e.target.value][1]; upd(); } };
+      $('#smsQ').oninput = e => { const q = e.target.value.toLowerCase(); document.querySelectorAll('#smsPick li').forEach(li => { li.hidden = !li.textContent.toLowerCase().includes(q); }); };
+      $('#smsf').onsubmit = async e => {
+        e.preventDefault(); $('#smsE').textContent = '';
+        const msg = m.value.trim(); const { phones } = data.parentPhones(chosen());
+        if (!msg) { $('#smsE').textContent = 'Write a message first.'; return; }
+        if (!phones.length) { $('#smsE').textContent = 'No parent phone numbers in this selection.'; return; }
+        if (!confirm(`Send this message now to ${phones.length} parent number(s)?`)) return;
+        const b = $('#smsGo'); b.disabled = true; b.textContent = 'Sending…';
+        try {
+          const r = await data.sendSms({ phones, message: msg, label: aud.value === 'all' ? 'All parents' : aud.value === 'class' ? 'Class ' + $('#smsCls').value : 'Chosen students', by: s.name });
+          toast(r.error ? r.error : r.demo ? `Demo: ${r.sent} message(s) logged, nothing really sent` : `Sent to ${r.sent} parent number(s)`);
+          window.dispatchEvent(new HashChangeEvent('hashchange'));
+        } catch (err) { $('#smsE').textContent = err.message; b.disabled = false; b.innerHTML = `${ic('mail')} Send now`; }
+      };
+    }
   };
 }

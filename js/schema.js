@@ -24,6 +24,7 @@ export const COLS = {
       { key: 'date', label: 'Date', type: 'date', required: true, default: 'today' },
       { key: 'pinned', label: 'Pin to the top', type: 'checkbox' },
       { key: 'mandatory', label: 'Mandatory instruction (alerts everyone on the bell)', type: 'checkbox' },
+      { key: 'sms', label: 'Also text this to all parents\' phones right now (SMS, sent when you save a new announcement)', type: 'checkbox' },
       { key: 'image', label: 'Flier / advert picture (shows on home page)', type: 'image' },
       { key: 'file', label: 'Attach a file (jpg, png, pdf...)', type: 'file' }
     ]
@@ -376,6 +377,16 @@ export const COLS = {
       { key: 'description', label: 'Description (optional)', type: 'textarea' }
     ]
   },
+  sms: {
+    label: 'Message parents (SMS)', one: 'message', icon: 'mail', roles: ['admin'], noCreate: true, custom: true,
+    title: r => r.label || 'Message', sub: r => `${r.status || ''} · ${r.count || 0} of ${r.total || 0} numbers`, fields: []
+  },
+  smslog: {
+    label: 'SMS history', one: 'message', icon: 'mail', roles: ['admin'], noCreate: true, hidden: true,
+    title: r => `${r.label || 'Message'}: ${r.status || ''}`, sub: r => `${String(r.date || '').slice(0, 16).replace('T', ' ')} · ${r.count || 0}/${r.total || 0} · ${String(r.message || '').slice(0, 70)}`,
+    sort: (a, b) => String(b.date || '').localeCompare(String(a.date || '')),
+    fields: [{ key: 'message', label: 'Message', type: 'textarea', readonly: true }, { key: 'status', label: 'Status', type: 'text', readonly: true }]
+  },
   settings: {
     label: 'Site settings', one: 'settings', icon: 'sliders', roles: ['admin'], single: 'site',
     title: () => 'Site settings', sub: () => '',
@@ -406,7 +417,7 @@ export const COLS = {
     ]
   }
 };
-export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'liveclasses', 'questions', 'fees', 'payments', 'feedback', 'applications', 'album', 'testimonials', 'honours', 'weekly', 'ptameetings', 'ptamembers', 'forum', 'activities', 'files', 'settings'];
+export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'liveclasses', 'questions', 'fees', 'payments', 'feedback', 'applications', 'album', 'testimonials', 'honours', 'sms', 'weekly', 'ptameetings', 'ptamembers', 'forum', 'activities', 'files', 'settings'];
 
 function feeScopeLabel(r, c) {
   if (r.scope === 'class') return r.targetClass;
