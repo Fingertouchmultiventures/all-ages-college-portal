@@ -372,8 +372,9 @@ async function vSms(s) {
       <div class="field"><label for="smsT">Quick message</label><select class="input" id="smsT"><option value="">Choose a template (optional)</option>${TPL.map((t, i) => `<option value="${i}">${esc(t[0])}</option>`).join('')}</select></div>
       <div class="field"><label for="smsM">Message</label><textarea class="input" id="smsM" maxlength="450" required placeholder="Type your message to parents"></textarea><span class="hint" id="smsN"></span></div>
       <div id="smsE" class="error" role="alert"></div>
-      <div class="row-between" style="margin-top:14px"><button class="btn" type="submit" id="smsGo">${ic('mail')} Send now</button><span class="hint" id="smsSum"></span></div>
+      <div class="row-between" style="margin-top:14px"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" type="submit" id="smsGo">${ic('mail')} Send SMS now</button><button class="btn btn-navy" type="button" id="waGo">${ic('people')} Send via WhatsApp (free)</button></div><span class="hint" id="smsSum"></span></div>
     </form>
+    <div id="waPanel" class="card" style="margin-top:14px" hidden></div>
     <h2 class="h2" style="margin-top:26px">Sent messages</h2>
     <ul class="mlist">${log.map(r => `<li class="mrow"><span class="mthumb mthumb-ic">${ic('mail')}</span><div class="mrow-main"><b>${esc(r.label || 'Message')} · ${esc(r.status || '')}</b><span>${esc(String(r.date || '').slice(0, 16).replace('T', ' '))} · ${r.count || 0} of ${r.total || 0} numbers · ${esc(String(r.message || '').slice(0, 90))}</span></div></li>`).join('') || '<li class="mrow"><span class="hint">Nothing sent yet.</span></li>'}</ul>`,
     bind() {
@@ -388,6 +389,21 @@ async function vSms(s) {
       ['change', 'input'].forEach(ev => $('#smsf').addEventListener(ev, upd)); upd();
       $('#smsT').onchange = e => { if (e.target.value !== '') { m.value = TPL[e.target.value][1]; upd(); } };
       $('#smsQ').oninput = e => { const q = e.target.value.toLowerCase(); document.querySelectorAll('#smsPick li').forEach(li => { li.hidden = !li.textContent.toLowerCase().includes(q); }); };
+      $('#waGo').onclick = async () => {
+        $('#smsE').textContent = ''; const msg = m.value.trim(); if (!msg) { $('#smsE').textContent = 'Write a message first.'; return; }
+        const by = new Map(); chosen().forEach(st => { const n = data.normPhone(st.parentPhone); if (!n) return; const o = by.get(n) || { n, parent: st.parentName || 'Parent', kids: [] }; o.kids.push(st.name); by.set(n, o); });
+        const list = [...by.values()]; if (!list.length) { $('#smsE').textContent = 'No parent phone numbers in this selection.'; return; }
+        const P = $('#waPanel'); P.hidden = false;
+        P.innerHTML = `<h2 class="h2s">${ic('people')} WhatsApp: ${list.length} parent(s)</h2><p class="hint">Tap "Open WhatsApp" for each parent. The message is already typed; just press Send in WhatsApp, then come back. Done ones turn green.</p>
+          <ul class="mlist">${list.map((o, i) => `<li class="mrow" id="wa${i}"><div class="mrow-main"><b>${esc(o.parent)}</b><span>Parent of ${esc(o.kids.join(', '))} · +${o.n}</span></div><a class="btn btn-sm" target="_blank" rel="noopener noreferrer" data-i="${i}" href="https://wa.me/${o.n}?text=${encodeURIComponent(msg)}">Open WhatsApp</a></li>`).join('')}</ul>`;
+        P.querySelectorAll('a[data-i]').forEach(a => a.addEventListener('click', () => { const li = $('#wa' + a.dataset.i); li.style.background = '#e8f7ee'; a.textContent = 'Opened ✓'; }));
+        try {
+          const regsSel = aud.value === 'pick' ? chosen().map(x => x.reg_no) : [];
+          await data.save('smslog', { label: 'WhatsApp: ' + (aud.value === 'all' ? 'All parents' : aud.value === 'class' ? 'Class ' + $('#smsCls').value : 'Chosen students'), message: msg, count: list.length, total: list.length, status: 'WhatsApp (sent by you)', date: new Date().toISOString(), by: s.name });
+          await data.saveNotice({ title: 'Message from the school', message: msg, audience: aud.value, cls: aud.value === 'class' ? $('#smsCls').value : '', regs: regsSel, by: s.name });
+        } catch { /* log is best-effort */ }
+        P.scrollIntoView({ behavior: 'smooth' });
+      };
       $('#smsf').onsubmit = async e => {
         e.preventDefault(); $('#smsE').textContent = '';
         const msg = m.value.trim(); const { phones } = data.parentPhones(chosen());
@@ -400,7 +416,7 @@ async function vSms(s) {
           { const regsSel = aud.value === 'pick' ? chosen().map(x => x.reg_no) : []; await data.saveNotice({ title: 'Message from the school', message: msg, audience: aud.value, cls: aud.value === 'class' ? $('#smsCls').value : '', regs: regsSel, by: s.name }); }
           toast(r.error ? r.error : r.demo ? `Demo: ${r.sent} message(s) logged, nothing really sent` : `Sent to ${r.sent} parent number(s)`);
           window.dispatchEvent(new HashChangeEvent('hashchange'));
-        } catch (err) { $('#smsE').textContent = err.message; b.disabled = false; b.innerHTML = `${ic('mail')} Send now`; }
+        } catch (err) { $('#smsE').textContent = err.message; b.disabled = false; b.innerHTML = `${ic('mail')} Send SMS now`; }
       };
     }
   };
