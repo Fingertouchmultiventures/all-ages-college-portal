@@ -291,9 +291,10 @@ export function assignIds(recs, existing) {
 }
 export async function admitApplications(apps, who) {
   const existing = await list('students'); const done = [];
-  const studs = apps.map(a => ({ name: `${a.firstName} ${a.surname}`.trim(), class: a.classApplied, gender: a.gender, parentName: a.guardianName, parentPhone: a.phone, applicationRef: a.ref || a.id }));
+  const studs = apps.map(a => ({ _dob: a.dob, name: `${a.firstName} ${a.surname}`.trim(), class: a.classApplied, gender: a.gender, parentName: a.guardianName, parentPhone: a.phone, applicationRef: a.ref || a.id }));
   assignIds(studs, existing);
-  await saveMany('students', studs);
+  const stClean = studs.map(({ _dob, ...r }) => r); await saveMany('students', stClean);
+  for (const st of studs) if (st._dob) await saveBirthday({ id: 'bd-' + norm(st.reg_no), key: st.reg_no, name: st.name, kind: 'Student', class: st.class, md: st._dob });
   await saveMany('applications', apps.map((a, i) => ({ ...a, status: 'Admitted', admittedAs: studs[i].reg_no, parentId: studs[i].parentId, adminNote: ((a.adminNote ? a.adminNote + ' · ' : '') + `Admitted by ${who}`) })));
   return studs;
 }
@@ -387,4 +388,38 @@ export async function sendSms({ phones, message, label, by }) {
   const status = res.demo ? 'Demo (not sent)' : res.notConfigured ? 'Not sent: SMS not switched on' : res.error ? (res.sent ? 'Partly sent' : 'Failed') : 'Sent';
   try { await save('smslog', { label: label || 'Message', message, count: res.sent || 0, total: phones.length, status, error: res.error || '', date: new Date().toISOString(), by: by || '' }); } catch { /* log is best-effort */ }
   return { ...res, status };
+}
+
+/* ---------- birthdays (month and day only, never the year) and bell notices ---------- */
+export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+export const mdOf = v => { const m = String(v || '').match(/(?:\d{4}-)?(\d{2})-(\d{2})/); return m ? m[1] + '-' + m[2] : ''; };
+export const mdLabel = md => { const [m, d] = String(md).split('-').map(Number); return m && d ? `${MONTHS[m - 1]} ${d}` : ''; };
+const mdFor = (off = 0) => { const d = new Date(); d.setDate(d.getDate() + off); return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+export async function saveBirthday(b) {
+  const md = mdOf(b.md); if (!md || !b.name) return null;
+  return save('birthdays', { id: b.id || 'bd-' + norm(b.key || b.name), key: b.key || '', name: b.name, kind: b.kind || 'Student', class: b.class || '', md, photo: b.photo || undefined, userId: b.userId || undefined });
+}
+export async function celebrants(off = 0) { const md = mdFor(off); return (await list('birthdays')).filter(b => b.md === md).sort((a, b) => a.name.localeCompare(b.name)); }
+// Upcoming birthdays in the next N days (not including today), soonest first.
+export async function upcomingBirthdays(days = 30) {
+  const all = await list('birthdays'); const out = [];
+  for (let i = 1; i <= days; i++) { const md = mdFor(i); all.filter(b => b.md === md).forEach(b => out.push({ ...b, inDays: i })); }
+  return out;
+}
+// Pull birthdays from student bio-data, admission applications (date of birth) and staff records.
+export async function syncBirthdays() {
+  const [studs, bios, apps, staff, have] = await Promise.all([list('students'), list('bios'), list('applications'), list('staff'), list('birthdays')]);
+  const keep = new Map(have.filter(b => b.userId).map(b => [b.id, b])); let n = 0;
+  for (const st of studs) {
+    const bio = bios.find(b => norm(b.regNo) === norm(st.reg_no)); const app = apps.find(a => a.ref && a.ref === st.applicationRef || a.admittedAs === st.reg_no);
+    const md = mdOf((bio && bio.dob) || (app && app.dob)); if (!md) continue; const id = 'bd-' + norm(st.reg_no);
+    if (keep.has(id)) continue;
+    await saveBirthday({ id, key: st.reg_no, name: st.name, kind: 'Student', class: st.class, md, photo: bio && bio.photo }); n++;
+  }
+  for (const t of staff) { const md = mdOf(t.birthMonth && t.birthDay ? `${String(t.birthMonth).padStart(2, '0')}-${String(t.birthDay).padStart(2, '0')}` : ''); if (!md) continue; await saveBirthday({ id: 'bd-staff-' + t.id, key: t.id, name: t.name, kind: 'Teacher', class: t.role || '', md, photo: t.photo }); n++; }
+  return n;
+}
+// Record a notice so it also shows on the bell of the parents and students it was sent to.
+export async function saveNotice({ title, message, audience, cls, regs, by }) {
+  return save('notices', { title, message, audience: audience || 'all', class: cls || '', regs: regs || [], date: new Date().toISOString(), by: by || '' });
 }

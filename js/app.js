@@ -113,6 +113,7 @@ function vLogin(role) {
 }
 
 async function vDashboard(s) {
+  if (s && s.role === 'admin') { try { const k = 'aac.bdsync'; const t = new Date().toISOString().slice(0, 10); if (localStorage.getItem(k) !== t) { localStorage.setItem(k, t); data.syncBirthdays().catch(() => {}); } } catch { /* ignore */ } }
   const role = s.role === 'payment' ? 'parent' : s.role;
   const mine = (TILES[role] || []).slice(); let tiles = mine;
   if (role === 'admin') tiles = [...hubTiles(s).map(t => [t[0], t[1], t[2]]), ...mine];

@@ -51,6 +51,8 @@ export const COLS = {
       { key: 'subject', label: 'Subject or class (optional)', type: 'text' },
       { key: 'orgLevel', label: 'Position on organogram', type: 'select', options: ORG_LEVELS, default: '4', hint: 'Used to draw the school organogram on the About page' },
       { key: 'reportsTo', label: 'Reports to (name, optional)', type: 'text' },
+      { key: 'birthMonth', label: 'Birthday: month (optional, for birthday greetings)', type: 'select', options: [['1','January'],['2','February'],['3','March'],['4','April'],['5','May'],['6','June'],['7','July'],['8','August'],['9','September'],['10','October'],['11','November'],['12','December']] },
+      { key: 'birthDay', label: 'Birthday: day of the month (optional)', type: 'number' },
       { key: 'bio', label: 'Short note (optional)', type: 'textarea' },
       { key: 'photo', label: 'Photo', type: 'image' }
     ]
@@ -377,6 +379,20 @@ export const COLS = {
       { key: 'description', label: 'Description (optional)', type: 'textarea' }
     ]
   },
+  birthdays: {
+    csv: true, sample: ['Ada Okafor', 'Student', 'JSS 1', '3', '15'],
+    label: 'Birthdays', one: 'birthday', icon: 'star', roles: ['admin'],
+    title: r => r.name, sub: r => `${r.kind || ''}${r.class ? ' · ' + r.class : ''} · ${r.md ? r.md.replace(/^(\d+)-(\d+)$/, (m, a, b) => ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+a] + ' ' + +b) : ''}`,
+    sort: (a, b) => String(a.md || '').localeCompare(String(b.md || '')),
+    fields: [
+      { key: 'name', label: 'Full name', type: 'text', required: true },
+      { key: 'kind', label: 'Who', type: 'select', options: ['Student', 'Parent', 'Teacher', 'Staff'], required: true, default: 'Student' },
+      { key: 'class', label: 'Class or role (optional)', type: 'text' },
+      { key: 'month', label: 'Month of birth', type: 'select', required: true, options: [['1','January'],['2','February'],['3','March'],['4','April'],['5','May'],['6','June'],['7','July'],['8','August'],['9','September'],['10','October'],['11','November'],['12','December']] },
+      { key: 'day', label: 'Day of birth', type: 'number', required: true, hint: 'Only the month and day are kept and shown, never the year.' },
+      { key: 'photo', label: 'Profile picture', type: 'image' }
+    ]
+  },
   sms: {
     label: 'Message parents (SMS)', one: 'message', icon: 'mail', roles: ['admin'], noCreate: true, custom: true,
     title: r => r.label || 'Message', sub: r => `${r.status || ''} · ${r.count || 0} of ${r.total || 0} numbers`, fields: []
@@ -417,7 +433,7 @@ export const COLS = {
     ]
   }
 };
-export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'liveclasses', 'questions', 'fees', 'payments', 'feedback', 'applications', 'album', 'testimonials', 'honours', 'sms', 'weekly', 'ptameetings', 'ptamembers', 'forum', 'activities', 'files', 'settings'];
+export const ADMIN_ORDER = ['announcements', 'prefects', 'staff', 'students', 'curriculum', 'lessonNotes', 'notebooks', 'assignments', 'tests', 'scores', 'liveclasses', 'questions', 'fees', 'payments', 'feedback', 'applications', 'album', 'testimonials', 'honours', 'sms', 'birthdays', 'weekly', 'ptameetings', 'ptamembers', 'forum', 'activities', 'files', 'settings'];
 
 function feeScopeLabel(r, c) {
   if (r.scope === 'class') return r.targetClass;

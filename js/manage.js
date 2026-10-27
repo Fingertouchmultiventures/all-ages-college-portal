@@ -8,6 +8,8 @@ import { CLASSES, TERMS } from './ui.js';
 import { $, esc, ic, opt, validate, toast, money, today, norm, toCsv, csvParse, download } from './ui.js';
 const ANYFILE = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv';
 const snake = t => String(t).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+const pad2 = n => String(n).padStart(2, '0');
+const bdFix = r => { if (r.month && r.day) { r.md = pad2(r.month) + '-' + pad2(r.day); } delete r.month; delete r.day; return r; };
 const isImg = f => f && String(f.type || '').startsWith('image/');
 
 export const allowed = (col, s) => Boolean(COLS[col] && s && (s.role === 'admin' || COLS[col].roles.includes(s.role)));
@@ -56,7 +58,7 @@ async function vList(col, c, s, ctx) {
     <div class="row-between" style="margin-top:6px"><div><p class="eyebrow">Manage</p><h1 class="h1">${c.label}</h1></div>
       ${c.noCreate ? '' : `<a class="btn" href="#/manage/${col}/new">${ic('plus')} Add ${c.one}</a>`}</div>
     <div class="row-between" style="margin:18px 0 10px"><div class="searchbox">${ic('search')}<input id="msearch" class="input" type="search" placeholder="Search ${c.label.toLowerCase()}" aria-label="Search"></div>
-      <div class="toolbar">${hasFile ? `<button class="btn btn-sm" id="mbulk" type="button">${ic('plus')} Bulk upload files</button>` : ''}${col === 'curriculum' && s.role === 'admin' ? `<button class="btn btn-sm" id="mstd" type="button">${ic('list')} Load Nigerian curriculum (Creche to SSS 3)</button>` : ''}${col === 'students' ? `<button class="btn btn-sm" id="mlogins" type="button">${ic('user')} Create logins for students and parents</button>` : ''}${col === 'applications' ? `<button class="btn btn-sm" id="madmitall" type="button">${ic('cap')} Admit selected (or all new)</button>` : ''}${col === 'questions' ? `<button class="btn btn-sm" id="mq" type="button">${ic('form')} Load sample questions</button>` : ''}${col === 'notebooks' ? `<button class="btn btn-sm" id="mnb" type="button">${ic('book')} Load sample notebooks</button>` : ''}${col === 'lessonNotes' ? `<button class="btn btn-sm" id="mdraft" type="button">${ic('book')} Draft notes from curriculum</button>` : ''}${c.csv ? `<button class="btn btn-sm" id="mcsv" type="button">${ic('plus')} Import CSV</button>` : ''}
+      <div class="toolbar">${hasFile ? `<button class="btn btn-sm" id="mbulk" type="button">${ic('plus')} Bulk upload files</button>` : ''}${col === 'curriculum' && s.role === 'admin' ? `<button class="btn btn-sm" id="mstd" type="button">${ic('list')} Load Nigerian curriculum (Creche to SSS 3)</button>` : ''}${col === 'students' ? `<button class="btn btn-sm" id="mlogins" type="button">${ic('user')} Create logins for students and parents</button>` : ''}${col === 'applications' ? `<button class="btn btn-sm" id="madmitall" type="button">${ic('cap')} Admit selected (or all new)</button>` : ''}${col === 'birthdays' ? `<button class="btn btn-sm" id="mbdsync" type="button">${ic('star')} Pick from bio-data (students, applications, staff)</button>` : ''}${col === 'questions' ? `<button class="btn btn-sm" id="mq" type="button">${ic('form')} Load sample questions</button>` : ''}${col === 'notebooks' ? `<button class="btn btn-sm" id="mnb" type="button">${ic('book')} Load sample notebooks</button>` : ''}${col === 'lessonNotes' ? `<button class="btn btn-sm" id="mdraft" type="button">${ic('book')} Draft notes from curriculum</button>` : ''}${c.csv ? `<button class="btn btn-sm" id="mcsv" type="button">${ic('plus')} Import CSV</button>` : ''}
       ${rows.length ? `<label class="check mini" style="margin:0"><input type="checkbox" id="msall"> Select all shown</label><button class="btn btn-ghost btn-sm" id="mdelsel" type="button" hidden>${ic('trash')} Delete selected (<span id="mselN">0</span>)</button>` : ''}
       <button class="btn btn-ghost btn-sm" id="mexport" type="button">${ic('download')} Export CSV</button></div></div>
     <div id="mpanel"></div>
@@ -93,6 +95,7 @@ async function vList(col, c, s, ctx) {
       };
       document.querySelectorAll('[data-admit]').forEach(b => b.onclick = () => admit(rows.filter(r => r.id === b.dataset.admit)));
       if ($('#madmitall')) $('#madmitall').onclick = () => { const ids = sels().map(x => x.dataset.id); admit(rows.filter(r => ids.length ? ids.includes(r.id) : (r.status || 'New') !== 'Admitted' && r.status !== 'Declined').filter(r => r.status !== 'Admitted')); };
+      if ($('#mbdsync')) $('#mbdsync').onclick = async () => { try { const n = await data.syncBirthdays(); toast(n ? `${n} birthday(s) picked from bio-data` : 'No new birthdays found. Students add theirs under My profile; staff under Teachers and staff.'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); } };
       if ($('#mq')) $('#mq').onclick = async () => { try { const n = await data.saveMany('questions', SAMPLE_QUESTIONS); toast(`${n} sample questions loaded`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); } };
       if ($('#mnb')) $('#mnb').onclick = async () => { try { const n = await data.saveMany('notebooks', SAMPLE_NOTEBOOKS.map(x => ({ ...x, owner: s.id }))); toast(`${n} sample notebooks loaded`); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (e) { toast(e.message); } };
       if ($('#mdraft')) $('#mdraft').onclick = () => draftPanel(s);
@@ -135,6 +138,7 @@ async function vForm(col, c, id, s, ctx) {
   let rec = {};
   if (c.single) { const cur = await data.getSettings(true); const { phones, ...rest } = cur; rec = { ...rest, id: c.single }; }
   else if (id) { rec = (await data.list(col)).find(r => r.id === id) || {}; if (!rec.id && !c.single) return { title: c.label, nav: 'home', html: `<a class="back" href="#/manage/${col}">${ic('back')} Back</a><p>That record was not found.</p>` }; }
+  if (col === 'birthdays' && rec.md) { const [m, d] = rec.md.split('-'); rec.month = String(+m); rec.day = +d; }
   const isNew = !rec.id || (c.single && false);
   return {
     title: (isNew ? 'Add ' : 'Edit ') + c.one, nav: 'home', html: `
@@ -189,12 +193,15 @@ async function vForm(col, c, id, s, ctx) {
           if (col === 'students') out.reg_norm = norm(out.reg_no);
           if (isNew && ['lessonNotes', 'notebooks', 'assignments', 'tests', 'liveclasses', 'questions'].includes(col)) { out.owner = s.id; out.teacherName = s.name; }
           if (isNew && col === 'payments') { out.receipt = 'RCT-' + Date.now().toString(36).toUpperCase().slice(-6); out.enteredBy = s.name; }
-          const wasNew = isNew; let smsDone = false; await data.save(col, out);
+          if (col === 'birthdays') { if (+out.day < 1 || +out.day > 31) throw new Error('Enter a day between 1 and 31.'); bdFix(out); out.key = out.key || norm(out.name); }
+          const wasNew = isNew; let smsDone = false; const saved = await data.save(col, out);
+          if (col === 'staff') { const md = out.birthMonth && out.birthDay ? pad2(out.birthMonth) + '-' + pad2(out.birthDay) : ''; if (md) await data.saveBirthday({ id: 'bd-staff-' + saved.id, key: saved.id, name: out.name, kind: 'Teacher', class: out.role, md, photo: out.photo }); }
           if (col === 'announcements' && wasNew && out.sms && ['all', 'parents'].includes(out.audience)) {
             smsDone = true;
             try {
               const sts = await data.list('students'); const { phones } = data.parentPhones(sts);
               const r = await data.sendSms({ phones, message: `All Ages College: ${out.title}. ${out.body}`.slice(0, 450), label: 'Announcement: ' + out.title, by: s.name });
+              await data.saveNotice({ title: out.title, message: out.body, audience: 'all', by: s.name });
               toast(r.error ? 'Announcement saved. SMS: ' + r.error : `Announcement saved and texted to ${r.sent} parent number(s)`);
             } catch (e2) { toast('Announcement saved. SMS not sent: ' + e2.message); }
           }
@@ -272,7 +279,7 @@ function csvPanel(col, c, s, ctx) {
       const miss = cols.filter(f => f.required && !f.showIf && (rec[f.key] === '' || rec[f.key] === undefined)).map(f => f.label);
       const badSel = cols.filter(f => f.type === 'select' && f.options && rec[f.key] && !pairs(f.options).some(([v]) => v === rec[f.key])).map(f => `${f.label} "${rec[f.key]}"`);
       if (miss.length) errs.push(`Row ${i + 2}: missing ${miss.join(', ')}`); else if (badSel.length) errs.push(`Row ${i + 2}: not recognised: ${badSel.join(', ')}`);
-      else { if (c.idFrom && col !== 'students' && col !== 'activities') rec.id = c.idFrom(rec); if (col === 'applications' && !rec.ref) rec.ref = data.newRef('AAC'); recs.push(rec); }
+      else { if (c.idFrom && col !== 'students' && col !== 'activities') rec.id = c.idFrom(rec); if (col === 'applications' && !rec.ref) rec.ref = data.newRef('AAC'); if (col === 'birthdays') { if (!(+rec.day >= 1 && +rec.day <= 31)) { errs.push(`Row ${i + 2}: day must be 1 to 31`); return; } bdFix(rec); rec.key = norm(rec.name); rec.id = 'bd-' + norm(rec.name); } recs.push(rec); }
     });
     $('#cprev').textContent = `${recs.length} row(s) ready to import${errs.length ? `, ${errs.length} skipped` : ''}.`;
     $('#cErr').textContent = errs.slice(0, 6).join(' | ') + (errs.length > 6 ? ' ...' : '');
@@ -389,6 +396,7 @@ async function vSms(s) {
         const b = $('#smsGo'); b.disabled = true; b.textContent = 'Sending…';
         try {
           const r = await data.sendSms({ phones, message: msg, label: aud.value === 'all' ? 'All parents' : aud.value === 'class' ? 'Class ' + $('#smsCls').value : 'Chosen students', by: s.name });
+          { const regsSel = aud.value === 'pick' ? chosen().map(x => x.reg_no) : []; await data.saveNotice({ title: 'Message from the school', message: msg, audience: aud.value, cls: aud.value === 'class' ? $('#smsCls').value : '', regs: regsSel, by: s.name }); }
           toast(r.error ? r.error : r.demo ? `Demo: ${r.sent} message(s) logged, nothing really sent` : `Sent to ${r.sent} parent number(s)`);
           window.dispatchEvent(new HashChangeEvent('hashchange'));
         } catch (err) { $('#smsE').textContent = err.message; b.disabled = false; b.innerHTML = `${ic('mail')} Send now`; }

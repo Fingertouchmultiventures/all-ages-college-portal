@@ -40,14 +40,20 @@ export async function vAnnouncements(s) {
 
 /* ---------- announcements carousel (home page adverts and notices) ---------- */
 export async function annCarousel(s) {
-  const list = (await announcementsFor(s, 8)); if (!list.length) return '';
-  return `<section class="carousel acar" aria-roledescription="carousel" aria-label="Announcements and adverts">
-    <div class="slides" tabindex="0">${list.map((a, i) => `<article class="slide aslide ${a.image ? 'has-img' : ''}" aria-roledescription="slide" aria-label="${i + 1} of ${list.length}">
+  const list = (await announcementsFor(s, 8)); let cel = [];
+  try { cel = await data.celebrants(0); } catch { /* birthdays are optional */ }
+  if (!list.length && !cel.length) return '';
+  const total = cel.length + list.length;
+  const bday = (b, i) => `<article class="slide aslide bslide" aria-roledescription="slide" aria-label="${i + 1} of ${total}">
+      ${b.photo && isImg(b.photo) ? `<img class="bph" ${data.fileAttr(b.photo, 'src')} alt="${esc(b.name)}">` : `<span class="bph bph-ini" aria-hidden="true">${esc(initials(b.name))}</span>`}
+      <div class="atext"><span class="pill pill-red">Happy birthday · ${esc(data.mdLabel(b.md))}</span><h3>${esc(b.name)}</h3><p>${esc(b.kind || '')}${b.class ? ' · ' + esc(b.class) : ''}. Everyone at All Ages College wishes you a wonderful day!</p></div></article>`;
+  return `<section class="carousel acar" aria-roledescription="carousel" aria-label="Announcements, birthdays and adverts">
+    <div class="slides" tabindex="0">${cel.map(bday).join('')}${list.map((a, j) => { const i = j + cel.length; return `<article class="slide aslide ${a.image ? 'has-img' : ''}" aria-roledescription="slide" aria-label="${i + 1} of ${total}">
       ${a.image ? `<img ${data.fileAttr(a.image, 'src')} alt="${esc(a.title)}" ${i ? 'loading="lazy"' : ''}>` : ''}
       <div class="atext"><span class="pill">${a.pinned ? 'Pinned' : 'News'} · ${fmtDate(a.date)}</span><h3>${esc(a.title)}</h3><p>${esc(String(a.body || '').slice(0, 180))}${String(a.body || '').length > 180 ? '…' : ''}</p>
-      <a class="link" href="#/announcements">Read more</a></div></article>`).join('')}</div>
-    ${list.length > 1 ? `<button class="cbtn cprev" type="button" aria-label="Previous">${ic('left')}</button><button class="cbtn cnext" type="button" aria-label="Next">${ic('right')}</button>
-    <div class="dots">${list.map((_, i) => `<span class="dot ${i ? '' : 'on'}"></span>`).join('')}</div>` : ''}</section>`;
+      <a class="link" href="#/announcements">Read more</a></div></article>`; }).join('')}</div>
+    ${total > 1 ? `<button class="cbtn cprev" type="button" aria-label="Previous">${ic('left')}</button><button class="cbtn cnext" type="button" aria-label="Next">${ic('right')}</button>
+    <div class="dots">${Array.from({ length: total }, (_, i) => `<span class="dot ${i ? '' : 'on'}"></span>`).join('')}</div>` : ''}</section>`;
 }
 
 /* ---------- album + carousel ---------- */
@@ -616,7 +622,7 @@ export async function vProfile(s, regParam) {
     bind() {
       $$('.bioform').forEach(f => f.onsubmit = async e => { e.preventDefault(); const reg = f.dataset.reg; const old = bios.find(b => norm(b.regNo) === norm(reg)) || {}; const btn = f.querySelector('button'); btn.disabled = true;
         try { const rec = { ...old, id: 'bio-' + norm(reg), regNo: reg }; ['dob', 'favSubject', 'hobbies', 'ambition', 'address', 'about'].forEach(k => { rec[k] = f.elements[k].value.trim(); });
-          if (f.elements.photo.files[0]) rec.photo = await data.uploadFile(f.elements.photo.files[0], 'portfolio'); await data.save('bios', rec); toast('Profile saved'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { f.querySelector('.berr').textContent = err.message; btn.disabled = false; } });
+          if (f.elements.photo.files[0]) rec.photo = await data.uploadFile(f.elements.photo.files[0], 'portfolio'); await data.save('bios', rec); if (rec.dob) { const st0 = studs.find(x => norm(x.reg_no) === norm(reg)) || {}; await data.saveBirthday({ id: 'bd-' + norm(reg), key: reg, name: st0.name || reg, kind: 'Student', class: st0.class, md: rec.dob, photo: rec.photo }).catch(() => {}); } toast('Profile saved'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { f.querySelector('.berr').textContent = err.message; btn.disabled = false; } });
       $$('.itemform').forEach(f => f.onsubmit = async e => { e.preventDefault(); const btn = f.querySelector('button'); btn.disabled = true;
         try { const rec = { regNo: f.dataset.reg, title: f.elements.title.value.trim(), category: f.elements.category.value, description: f.elements.description.value.trim(), date: new Date().toISOString().slice(0, 10) };
           if (f.elements.file.files[0]) rec.file = await data.uploadFile(f.elements.file.files[0], 'portfolio'); await data.save('portfolio', rec); toast('Added'); window.dispatchEvent(new HashChangeEvent('hashchange')); } catch (err) { f.querySelector('.ierr').textContent = err.message; btn.disabled = false; } });
@@ -719,6 +725,15 @@ export async function getAlerts(s) {
   const out = []; if (!s) return out; const today = new Date().toISOString().slice(0, 10); const role = s.role;
   const anns = (await announcementsFor(s)).filter(a => a.mandatory);
   anns.forEach(a => out.push({ key: 'ann-' + a.id, level: 'must', icon: 'mega', text: `Mandatory notice: ${a.title}`, sub: String(a.body || '').slice(0, 140), href: '#/announcements' }));
+  try {
+    const cel = await data.celebrants(0); const me = String(s.id || ''); const myName = String(s.name || '').toLowerCase();
+    cel.forEach(b => { const mine = (b.userId && b.userId === me) || (b.name || '').toLowerCase() === myName; out.push({ key: `bd-${b.id}-${today}`, level: 'info', icon: 'star', text: mine ? `Happy birthday, ${b.name}! The whole school celebrates you today` : `Today is ${b.name}'s birthday (${b.kind}${b.class ? ', ' + b.class : ''})`, sub: data.mdLabel(b.md), href: '#/' }); });
+    if (role === 'parent' || role === 'student') {
+      const studs0 = await myStudents(s); const regs = studs0.map(x => norm(x.reg_no)); const cls = studs0.map(x => x.class);
+      (await data.list('notices')).filter(n => role === 'parent' && n.date && daysTo(String(n.date).slice(0, 10)) >= -14).filter(n => (n.audience === 'all' || n.audience === 'parents') || (n.audience === 'class' && cls.includes(n.class)) || (n.audience === 'pick' && (n.regs || []).some(r => regs.includes(norm(r))))).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 5)
+        .forEach(n => out.push({ key: 'notice-' + n.id, level: 'msg', icon: 'mail', text: n.title || 'Message from the school', sub: String(n.message || '').slice(0, 160), href: '#/alerts' }));
+    }
+  } catch { /* notices and birthdays are optional */ }
   if (['student', 'parent'].includes(role)) {
     const [studs, fees, pays] = await Promise.all([myStudents(s), data.list('fees'), data.list('payments')]);
     studs.forEach(st => {
@@ -738,13 +753,13 @@ export async function getAlerts(s) {
   }
   if (['admin', 'bursar'].includes(role)) { const pend = (await data.list('payments')).filter(p => p.status === 'Pending'); const n = new Set(pend.map(p => p.receipt)).size; if (n) out.push({ key: 'pend-' + n, level: 'due', icon: 'wallet', text: `${n} payment(s) waiting for your confirmation`, sub: '', href: '#/p/pay' }); }
   if (role === 'admin') { const apps = (await data.list('applications')).filter(a => (a.status || 'New') === 'New'); if (apps.length) out.push({ key: 'apps-' + apps.length, level: 'info', icon: 'form', text: `${apps.length} new admission application(s)`, sub: '', href: '#/manage/applications' }); const tt = (await data.list('testimonials')).filter(t => !isPub(t)); if (tt.length) out.push({ key: 'tt-' + tt.length, level: 'info', icon: 'star', text: `${tt.length} testimonial(s) waiting for approval`, sub: '', href: '#/manage/testimonials' }); }
-  const order = { must: 0, late: 1, due: 2, info: 3 }; return out.sort((a, b) => order[a.level] - order[b.level]);
+  const order = { must: 0, msg: 1, late: 2, due: 3, info: 4 }; return out.sort((a, b) => order[a.level] - order[b.level]);
 }
 const aSeen = () => { try { return JSON.parse(localStorage.getItem('aac.alertseen') || '{}'); } catch { return {}; } };
 export async function unreadCount(s) { const sn = aSeen(); const a = (await getAlerts(s)).filter(x => !sn[x.key]).length; const r = (await data.getReplies()).filter(m => m.unread).length; return a + r; }
 export async function vAlerts(s) {
   const alerts = await getAlerts(s); const replies = await data.getReplies(); const sn = aSeen();
-  const lvl = { must: ['Mandatory', 'pill-red'], late: ['Late', 'pill-red'], due: ['Due', ''], info: ['Info', 'pill-blue'] };
+  const lvl = { must: ['Mandatory', 'pill-red'], late: ['Late', 'pill-red'], due: ['Due', ''], info: ['Info', 'pill-blue'], msg: ['Message', 'pill-blue'] };
   return { title: 'Alerts', nav: 'more', html: `<p class="eyebrow">Bell</p><h1 class="h1">Alerts and replies</h1>
     ${s ? '' : '<p class="lead">Sign in to see payment, class and school instructions meant for you.</p>'}
     <ul class="mlist" style="margin-top:16px">${alerts.map(a => `<li class="mrow ${sn[a.key] ? '' : 'reply-new'}"><span class="mthumb mthumb-ic">${ic(a.icon)}</span><div class="mrow-main"><b>${esc(a.text)}</b><span>${esc(a.sub)}</span></div><div class="mrow-actions"><span class="pill ${lvl[a.level][1]}">${lvl[a.level][0]}</span><a class="btn btn-ghost btn-sm" href="${a.href}">Open</a></div></li>`).join('') || (s ? '<li class="hint">You are up to date. Nothing needs your attention.</li>' : '')}</ul>
