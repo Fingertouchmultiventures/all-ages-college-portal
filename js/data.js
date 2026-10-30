@@ -349,9 +349,10 @@ export async function importResults(rows) {
 
 /* ---------- AI assistant ---------- */
 export async function askAI(messages, context) {
-  if (!CONFIG.AI_ENDPOINT) return null;
+  const url = CONFIG.AI_ENDPOINT || (isLive ? `${BASE}/functions/v1/ai-chat` : '');
+  if (!url) return null;
   try {
-    const res = await fetch(CONFIG.AI_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + CONFIG.SUPABASE_ANON_KEY }, body: JSON.stringify({ messages, context }) });
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + CONFIG.SUPABASE_ANON_KEY }, body: JSON.stringify({ messages, context }) });
     if (!res.ok) return null; const j = await res.json(); return j.reply || null;
   } catch { return null; }
 }

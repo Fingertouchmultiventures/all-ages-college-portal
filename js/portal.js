@@ -5,7 +5,7 @@ import { mdToHtml, $, $$, esc, ic, opt, field, selectField, validate, toast, mon
 
 const AUD_OF = { student: 'students', parent: 'parents', teacher: 'teachers' };
 export const myAud = s => (s ? AUD_OF[s.role] : null);
-async function myStudents(s) {
+export async function myStudents(s) {
   if (!s) return [];
   const all = await data.list('students'); const regs = (s.regs || []).map(norm);
   return all.filter(x => regs.includes(norm(x.reg_no)));
